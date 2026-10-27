@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#4fa8f0">
+<title>Игры</title>
+<style>
+  body {
+    margin: 0; min-height: 100dvh; background: linear-gradient(#4fa8f0, #c4e8ff);
+    font-family: ui-rounded, "SF Pro Rounded", -apple-system, system-ui, sans-serif;
+    padding: calc(env(safe-area-inset-top, 0px) + 24px) calc(env(safe-area-inset-right, 0px) + 16px)
+             24px calc(env(safe-area-inset-left, 0px) + 16px);
+    box-sizing: border-box; -webkit-tap-highlight-color: transparent;
+  }
+  h1 { color: #fff; margin: 0 0 20px; font-size: 34px; text-shadow: 0 3px 0 #2f7fd0; }
+  .games { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
+  a.game {
+    display: block; padding: 18px 20px; border-radius: 22px; background: rgba(255,255,255,.92);
+    color: #1d3b5c; text-decoration: none; box-shadow: 0 8px 20px rgba(0,0,0,.12);
+  }
+  a.game:active { transform: scale(.97); }
+  .name { font-size: 22px; font-weight: 900; }
+  .desc { font-size: 15px; color: #546e7a; margin-top: 4px; }
+</style>
+</head>
+<body>
+  <h1>Игры</h1>
+  <div class="games">
+    <a class="game" href="sky-fly-or-not.html">
+      <div class="name">☁️ Летает — не летает?</div>
+      <div class="desc">Угадай, что умеет летать</div>
+    </a>
+  </div>
+</body>
+</html>
