@@ -1,0 +1,687 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Он — Она">
+<meta name="theme-color" content="#6fbdf2">
+<title>Он — Она</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #6fbdf2; }
+  body {
+    position: fixed; inset: 0; cursor: pointer;
+    touch-action: none; overscroll-behavior: none;
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
+    font-family: ui-rounded, "SF Pro Rounded", -apple-system, system-ui, sans-serif;
+  }
+  #scene { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .hidden { display: none !important; }
+
+  /* подпись к фразе */
+  #caption {
+    position: absolute; left: 50%; transform: translateX(-50%);
+    top: calc(env(safe-area-inset-top, 0px) + 8px);
+    pointer-events: none; white-space: nowrap;
+  }
+  #caption div {
+    padding: .08em .6em .12em; border-radius: 999px; background: rgba(255,255,255,.92);
+    font-size: clamp(30px, min(13vh, 11vw), 76px); font-weight: 900;
+    box-shadow: 0 6px 18px rgba(0,0,0,.14);
+    animation: pop .3s cubic-bezier(.2,1.6,.4,1) both;
+  }
+  #caption.he div { color: #1565c0; }
+  #caption.she div { color: #d81b60; }
+  @keyframes pop { from { transform: scale(.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+  #hint {
+    position: absolute; left: 0; right: 0; text-align: center; pointer-events: none;
+    bottom: max(4px, env(safe-area-inset-bottom, 0px));
+    font-size: clamp(13px, 3.6vh, 17px); font-weight: 700; color: rgba(255,255,255,.9);
+    text-shadow: 0 1px 2px rgba(0,0,0,.35);
+  }
+
+  /* стартовый экран */
+  #start {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 3vh; text-align: center; padding: 16px;
+  }
+  #start h1 {
+    margin: 0; font-size: clamp(40px, min(17vh, 14vw), 92px); font-weight: 900; line-height: 1.1;
+    text-shadow: 0 4px 0 #fff, 0 10px 24px rgba(0,0,0,.18);
+  }
+  #start h1 .a { color: #1565c0; }
+  #start h1 .b { color: #d81b60; }
+  #startBtn {
+    background: #ffb300; color: #fff; border: 5px solid #fff; border-radius: 999px;
+    font-size: clamp(26px, 9vh, 42px); font-weight: 900; padding: .3em 1.7em;
+    box-shadow: 0 7px 0 #e08e00, 0 14px 26px rgba(0,0,0,.2);
+    text-shadow: 0 2px 0 rgba(0,0,0,.2);
+    animation: breathe 1.6s ease-in-out infinite;
+  }
+  @keyframes breathe { 50% { transform: scale(1.06); } }
+  #noVoice {
+    position: absolute; left: 50%; transform: translateX(-50%); white-space: nowrap;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 30px); padding: 4px 14px; border-radius: 999px;
+    background: #fff3e0; color: #e65100; font-size: 15px; font-weight: 700;
+  }
+</style>
+</head>
+<body>
+
+<svg id="scene" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="skyGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6fbdf2"/>
+      <stop offset="1" stop-color="#d5f0ff"/>
+    </linearGradient>
+  </defs>
+  <g id="bg"></g>
+  <g id="clouds"></g>
+  <ellipse id="shadow" rx="60" ry="9" fill="#000" opacity=".16" display="none"/>
+  <g id="actor"></g>
+</svg>
+
+<div id="caption" class="hidden"><div></div></div>
+<div id="hint" class="hidden">Нажми на экран</div>
+
+<div id="start">
+  <h1><span class="a">Он</span> — <span class="b">Она</span></h1>
+  <div id="startBtn">Старт</div>
+</div>
+<div id="noVoice" class="hidden">Нет русского голоса: установите его в настройках iPhone</div>
+
+<script>
+(() => {
+'use strict';
+
+const $ = s => document.querySelector(s);
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const lerp = (a, b, p) => a + (b - a) * p;
+
+/* ---------- детали рисунка (ноги на y=0, смотрят вправо, голова в масштабе r=30) ---------- */
+
+const bow = (x, y, c, s = 1) =>
+  `<g transform="translate(${x} ${y}) scale(${s})" fill="${c}">
+    <path d="M0,0 L-13,-9 L-13,9 Z"/><path d="M0,0 L13,-9 L13,9 Z"/><circle r="4"/></g>`;
+
+const CAP_HAIR = 'M-31,2 C-36,-40 34,-42 31,-6 C22,-18 8,-22 -6,-20 C-14,-18 -20,-8 -22,6 Z';
+
+function head(o) {
+  return `<g transform="translate(${o.cx || 0} ${o.cy}) scale(${o.r / 30})">
+    ${o.hairB || ''}
+    <circle r="30" fill="${o.skin}"/>
+    ${o.noEar ? '' : `<circle cx="-16" cy="4" r="6" fill="${o.skin}" stroke="#d9a07e" stroke-width="1.5"/>`}
+    <ellipse cx="-3" cy="9" rx="5" ry="3.2" fill="#ff8a80" opacity=".5"/>
+    <ellipse cx="24" cy="9" rx="4" ry="3.2" fill="#ff8a80" opacity=".5"/>
+    <circle cx="4" cy="-4" r="3.6" fill="#2b2b2b"/><circle cx="5.2" cy="-5.2" r="1.1" fill="#fff"/>
+    <circle cx="19" cy="-4" r="3.6" fill="#2b2b2b"/><circle cx="20.2" cy="-5.2" r="1.1" fill="#fff"/>
+    <path d="M12,1 q3,4 -1,5" stroke="#c98a68" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+    <path d="M5,13 Q12,20 19,13" stroke="${o.mouth || '#b5533c'}" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+    ${o.hairF || ''}
+  </g>`;
+}
+
+function person(o) {
+  const hip = -o.leg, sh = hip - o.torso, hy = sh - o.r * 0.82, w = o.w, lw = o.limb;
+  const handY = sh + 8 + o.arm;
+  const leg = (role, x, color) => `<g data-role="${role}" data-pivot="${x},${hip}">
+    <path d="M${x},${hip} L${x},-7" stroke="${color}" stroke-width="${lw}" stroke-linecap="round"/>
+    <ellipse cx="${x + 6}" cy="-6" rx="${lw * .95}" ry="6.5" fill="${o.shoe}"/></g>`;
+  const arm = (role, x, color, extra = '') => `<g data-role="${role}" data-pivot="${x},${sh + 8}">
+    ${extra}
+    <path d="M${x},${sh + 8} L${x},${handY}" stroke="${color}" stroke-width="${lw * .82}" stroke-linecap="round"/>
+    <circle cx="${x}" cy="${handY}" r="${lw * .52}" fill="${o.skin}"/></g>`;
+  const cane = o.cane
+    ? `<path d="M${w * .1 + 12},${handY} L${w * .1 + 12},-2 M${w * .1 + 12},${handY} q0,-12 -12,-10" stroke="#6d4c41" stroke-width="5" fill="none" stroke-linecap="round"/>`
+    : '';
+  const skirt = o.skirt
+    ? `<path d="M${-w / 2},${hip - 10} L${w / 2},${hip - 10} L${w / 2 + o.flare},${hip + o.skirt} Q0,${hip + o.skirt + 7} ${-w / 2 - o.flare},${hip + o.skirt} Z" fill="${o.skirtColor || o.shirt}"/>`
+    : '';
+  return arm('armB', -w * .1, o.sleeveB || o.sleeve) +
+    leg('legB', -w * .18, o.pantsB || o.pants) + leg('legF', w * .18, o.pants) +
+    `<rect x="${-w / 2}" y="${sh}" width="${w}" height="${hip - sh + 6}" rx="${w * .34}" fill="${o.shirt}"/>` +
+    skirt + (o.front ? o.front(sh, hip) : '') +
+    head({ ...o, cy: hy }) +
+    arm('armF', w * .1, o.sleeve, cane);
+}
+
+function wheel(cx, cy, r, tire, spoke) {
+  return `<g data-wheel="${cx},${cy}">
+    <circle cx="${cx}" cy="${cy}" r="${r - 3}" fill="none" stroke="${tire}" stroke-width="6"/>
+    <path d="M${cx - r + 5},${cy} L${cx + r - 5},${cy} M${cx},${cy - r + 5} L${cx},${cy + r - 5}
+      M${cx - (r - 5) * .7},${cy - (r - 5) * .7} L${cx + (r - 5) * .7},${cy + (r - 5) * .7}
+      M${cx - (r - 5) * .7},${cy + (r - 5) * .7} L${cx + (r - 5) * .7},${cy - (r - 5) * .7}"
+      stroke="${spoke}" stroke-width="1.8"/>
+    <circle cx="${cx}" cy="${cy}" r="4" fill="${spoke}"/></g>`;
+}
+
+/* ---------- персонажи ---------- */
+
+const SKIN = '#ffd3b0';
+
+const boy = person({
+  leg: 52, torso: 46, r: 29, w: 36, limb: 13, arm: 40, skin: SKIN,
+  shirt: '#1e88e5', sleeve: '#1e88e5', sleeveB: '#1669b5', pants: '#3f51b5', pantsB: '#303f9f', shoe: '#e53935',
+  hairF: `<path d="${CAP_HAIR}" fill="#6d4c41"/><path d="M-6,-31 q5,-14 14,-10 q-4,3 -5,10 Z" fill="#6d4c41"/>`,
+});
+
+const girl = person({
+  leg: 52, torso: 44, r: 29, w: 34, limb: 11, arm: 38, skin: SKIN,
+  shirt: '#ec407a', sleeve: '#ec407a', sleeveB: '#c2185b', pants: SKIN, pantsB: '#efbd98', shoe: '#c62828',
+  skirt: 32, flare: 12,
+  hairB: '<g fill="#a0522d"><ellipse cx="-36" cy="12" rx="10" ry="17"/><ellipse cx="36" cy="12" rx="10" ry="17"/></g>',
+  hairF: `<path d="${CAP_HAIR}" fill="#a0522d"/>${bow(-32, -9, '#ffeb3b', .8)}${bow(32, -9, '#ffeb3b', .8)}`,
+});
+
+const dad = person({
+  leg: 84, torso: 66, r: 26, w: 46, limb: 16, arm: 62, skin: SKIN,
+  shirt: '#90caf9', sleeve: '#90caf9', sleeveB: '#64b5f6', pants: '#455a64', pantsB: '#37474f', shoe: '#3e2723',
+  hairF: `<path d="${CAP_HAIR}" fill="#2b2b2b"/>
+    <path d="M3,8 Q12,4 21,8 Q12,12 3,8 Z" fill="#2b2b2b"/>`,
+  front: (sh, hip) => `<path d="M6,${sh + 2} L16,${sh + 2} L14,${sh + 42} L11,${sh + 48} L8,${sh + 42} Z" fill="#e53935"/>`,
+});
+
+const mom = person({
+  leg: 78, torso: 60, r: 25, w: 38, limb: 13, arm: 56, skin: SKIN,
+  shirt: '#e53935', sleeve: '#e53935', sleeveB: '#b71c1c', pants: SKIN, pantsB: '#efbd98', shoe: '#b71c1c',
+  skirt: 42, flare: 13, mouth: '#d81b60', noEar: true,
+  hairB: '<path d="M-33,-6 C-38,-42 36,-44 33,-6 C36,10 38,30 30,42 L-34,44 C-42,26 -36,8 -33,-6 Z" fill="#8d4a24"/>',
+  hairF: `<path d="M-30,-4 C-34,-38 32,-40 30,-8 C16,-20 2,-22 -10,-20 C-18,-16 -24,-8 -30,-4 Z" fill="#8d4a24"/>
+    <circle cx="-12" cy="18" r="3" fill="#ffc107"/>`,
+});
+
+const GLASSES = `<g fill="none" stroke="#546e7a" stroke-width="2"><circle cx="4" cy="-4" r="7.5"/><circle cx="19" cy="-4" r="7.5"/><path d="M-3.5,-4 L-14,-2"/></g>`;
+
+const grandpa = person({
+  leg: 74, torso: 60, r: 26, w: 44, limb: 15, arm: 56, skin: SKIN, cane: true,
+  shirt: '#8d6e63', sleeve: '#8d6e63', sleeveB: '#6d4c41', pants: '#616161', pantsB: '#4e4e4e', shoe: '#3e2723',
+  hairF: `<path d="M-30,2 C-33,-10 -30,-16 -24,-18 L-20,8 Z" fill="#eee"/>
+    <path d="M-20,6 C-22,40 30,42 29,6 C20,12 4,12 -20,6 Z" fill="#f5f5f5" stroke="#ddd" stroke-width="1"/>
+    <path d="M3,10 Q12,5 21,10 Q12,15 3,10 Z" fill="#eee"/>
+    <path d="M-31,-12 C-30,-37 28,-39 31,-12 Z" fill="#607d8b"/>
+    <path d="M8,-16 L44,-10 Q40,-4 12,-8 Z" fill="#546e7a"/>${GLASSES}`,
+});
+
+const grandma = person({
+  leg: 66, torso: 58, r: 28, w: 46, limb: 13, arm: 52, skin: SKIN, noEar: true,
+  shirt: '#7e57c2', sleeve: '#7e57c2', sleeveB: '#5e35b1', pants: '#5e35b1', pantsB: '#4527a0', shoe: '#3e2723',
+  skirt: 54, flare: 12, skirtColor: '#5e35b1',
+  hairB: '<ellipse cy="-2" rx="36" ry="38" fill="#e53935"/><path d="M-28,18 L-52,42 L-12,30 Z" fill="#c62828"/>',
+  hairF: `<path d="M-33,10 C-40,-42 38,-44 33,8 C28,2 26,-6 22,-14 C10,-24 -6,-22 -16,-12 C-22,-6 -24,2 -24,14 Z" fill="#e53935"/>
+    <g fill="#fff"><circle cx="-18" cy="-26" r="2.4"/><circle cx="2" cy="-30" r="2.4"/><circle cx="20" cy="-24" r="2.4"/><circle cx="-27" cy="-8" r="2.4"/></g>
+    <path d="M-24,14 Q0,40 24,14 Q0,28 -24,14 Z" fill="#e53935"/><circle cx="4" cy="31" r="4.5" fill="#c62828"/>${GLASSES}`,
+  front: (sh, hip) => `<path d="M-8,${hip - 24} L20,${hip - 24} L24,${hip + 40} L-14,${hip + 40} Z" fill="#fff"/>`,
+});
+
+const SKIN_D = '#efbd98';
+const baby = `
+  <g data-role="legB" data-pivot="-46,-42"><path d="M-46,-42 L-46,-12 L-74,-9" stroke="${SKIN_D}" stroke-width="15" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g>
+  <g data-role="armB" data-pivot="26,-50"><path d="M26,-50 L26,-9" stroke="${SKIN_D}" stroke-width="12" stroke-linecap="round"/></g>
+  <ellipse cx="-12" cy="-54" rx="46" ry="25" fill="#42a5f5"/>
+  <ellipse cx="-50" cy="-48" rx="23" ry="23" fill="#fff" stroke="#e0e0e0" stroke-width="2"/>
+  <g data-role="legF" data-pivot="-38,-38"><path d="M-38,-38 L-38,-11 L-66,-8" stroke="${SKIN}" stroke-width="15" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g>
+  <g data-role="armF" data-pivot="14,-48"><path d="M14,-48 L14,-8" stroke="${SKIN}" stroke-width="12" stroke-linecap="round"/></g>
+  ${head({
+    cx: 46, cy: -74, r: 31, skin: SKIN,
+    hairF: '<path d="M-6,-30 q6,-14 14,-8 q-7,0 -6,8 Z" fill="#c08a4d"/><path d="M-22,-20 q8,-10 18,-11 q-10,5 -12,13 Z" fill="#c08a4d"/>',
+  })}`;
+
+const smallGirl = person({
+  leg: 36, torso: 34, r: 28, w: 32, limb: 11, arm: 30, skin: SKIN,
+  shirt: '#ffb300', sleeve: '#ffb300', sleeveB: '#ff8f00', pants: SKIN, pantsB: SKIN_D, shoe: '#d81b60',
+  skirt: 22, flare: 10,
+  hairF: `<ellipse cx="0" cy="-38" rx="8" ry="10" fill="#e0b060"/>
+    <path d="${CAP_HAIR}" fill="#e0b060"/>${bow(0, -30, '#ec407a', .8)}`,
+});
+
+const motorbike = `
+  <path d="M-8,-138 L24,-112 L58,-120" stroke="#263238" stroke-width="12" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M-24,-84 L8,-68 L-6,-32" stroke="#1c262b" stroke-width="15" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  ${wheel(-72, -28, 28, '#212121', '#b0bec5')}${wheel(78, -28, 28, '#212121', '#b0bec5')}
+  <path d="M-72,-28 L-14,-40" stroke="#607d8b" stroke-width="7" stroke-linecap="round"/>
+  <path d="M60,-104 L78,-28" stroke="#90a4ae" stroke-width="7" stroke-linecap="round"/>
+  <path d="M60,-104 L54,-122" stroke="#37474f" stroke-width="6" stroke-linecap="round"/>
+  <path d="M-16,-30 L-96,-40" stroke="#b0bec5" stroke-width="8" stroke-linecap="round"/>
+  <path d="M-42,-70 L60,-96 L44,-52 L-14,-40 Z" fill="#37474f"/>
+  <rect x="-22" y="-56" width="50" height="30" rx="6" fill="#546e7a"/>
+  <path d="M-14,-56 L-14,-26 M-4,-56 L-4,-26 M6,-56 L6,-26 M16,-56 L16,-26" stroke="#37474f" stroke-width="2"/>
+  <path d="M-104,-62 Q-82,-72 -50,-68 L-52,-60 Q-82,-62 -100,-54 Z" fill="#c62828"/>
+  <rect x="-54" y="-80" width="48" height="13" rx="6" fill="#212121"/>
+  <ellipse cx="20" cy="-82" rx="30" ry="15" fill="#e53935"/>
+  <ellipse cx="14" cy="-88" rx="16" ry="4" fill="#fff" opacity=".35"/>
+  <circle cx="72" cy="-98" r="10" fill="#fff59d" stroke="#90a4ae" stroke-width="3"/>
+  <g fill="#cfd8dc"><circle data-puff="-100,-40,0"/><circle data-puff="-100,-40,1"/><circle data-puff="-100,-40,2"/></g>
+  <path d="M-26,-84 L10,-68 L-4,-32" stroke="#263238" stroke-width="16" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <ellipse cx="4" cy="-27" rx="15" ry="7" fill="#3e2723"/>
+  <path d="M-26,-90 L-6,-142" stroke="#37474f" stroke-width="34" stroke-linecap="round"/>
+  ${head({
+    cx: 2, cy: -170, r: 26, skin: SKIN,
+    hairF: `<path d="M3,9 Q12,5 21,9 Q12,13 3,9 Z" fill="#3e2723"/>
+      <path d="M-32,20 C-40,-42 38,-44 33,-8 L6,-10 C-4,-10 -8,-2 -8,6 L-8,24 Z" fill="#e53935"/>
+      <path d="M-32,20 L-8,24 L-8,12 L-33,8 Z" fill="#b71c1c"/>
+      <path d="M-20,-30 C-8,-38 10,-38 22,-30" stroke="#fff" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+      <rect x="-4" y="-9" width="15" height="9" rx="3.5" fill="#212121"/>
+      <rect x="13" y="-9" width="15" height="9" rx="3.5" fill="#212121"/>`,
+  })}
+  <path d="M-4,-134 L26,-108 L56,-120" stroke="#37474f" stroke-width="13" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="57" cy="-121" r="7" fill="${SKIN}"/>`;
+
+const BB = '-6,-32,15';
+const bicycle = `
+  <path data-crank="${BB},3.1416" stroke="#607d8b" stroke-width="4" fill="none" stroke-linecap="round"/>
+  <path data-leg="-24,-102,${BB},3.1416,46,46" stroke="#c2185b" stroke-width="13" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <ellipse rx="11" ry="5.5" fill="#ad1457"/>
+  ${wheel(-62, -30, 30, '#37474f', '#b0bec5')}${wheel(64, -30, 30, '#37474f', '#b0bec5')}
+  <g stroke="#00897b" stroke-width="6" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M-62,-30 L-6,-32 L-22,-92 Z"/>
+    <path d="M-22,-86 L42,-88 L-6,-32"/>
+    <path d="M42,-90 L64,-30"/>
+    <path d="M40,-90 L38,-108 L52,-110"/>
+  </g>
+  <ellipse cx="-24" cy="-97" rx="17" ry="5.5" fill="#37474f"/>
+  <circle cx="-6" cy="-32" r="9" fill="#90a4ae"/>
+  <path d="M-30,-104 L8,-148" stroke="#66bb6a" stroke-width="30" stroke-linecap="round"/>
+  <path d="M6,-150 L34,-126 L50,-110" stroke="#43a047" stroke-width="10" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  ${head({
+    cx: 12, cy: -181, r: 25, skin: SKIN, mouth: '#d81b60',
+    hairB: '<path d="M-26,-14 C-46,-22 -66,-6 -72,16 C-60,8 -46,8 -28,6 Z" fill="#6d4c41"/>',
+    hairF: `<path d="${CAP_HAIR}" fill="#6d4c41"/>${bow(-27, -8, '#ffeb3b', .7)}`,
+  })}
+  <path d="M60,-100 L90,-100 L84,-74 L64,-74 Z" fill="#d7a86e" stroke="#a97c44" stroke-width="2.5" stroke-linejoin="round"/>
+  <g><circle cx="68" cy="-105" r="6" fill="#ec407a"/><circle cx="80" cy="-107" r="6" fill="#ffeb3b"/><circle cx="74" cy="-103" r="3" fill="#fff"/></g>
+  <path data-leg="-24,-102,${BB},0,46,46" stroke="#ec407a" stroke-width="14" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <ellipse rx="11" ry="5.5" fill="#c2185b"/>
+  <path data-crank="${BB},0" stroke="#90a4ae" stroke-width="4" fill="none" stroke-linecap="round"/>
+  <path d="M4,-146 L30,-122 L48,-110" stroke="#66bb6a" stroke-width="11" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="49" cy="-110" r="6.5" fill="${SKIN}"/>`;
+
+const CHARACTERS = [
+  { svg: boy, he: true, wave: -110,
+    in: { gait: 'run', dur: 1.4, say: 'Он мальчик' }, out: { gait: 'walk', dur: 3.2, say: 'Он ушёл' } },
+  { svg: girl, he: false, wave: -110,
+    in: { gait: 'run', dur: 1.4, say: 'Она девочка' }, out: { gait: 'walk', dur: 3.2, say: 'Она ушла' } },
+  { svg: dad, he: true,
+    in: { gait: 'walk', dur: 2.4, say: 'Он папа' }, out: { gait: 'run', dur: 1.5, say: 'Папа убежал' } },
+  { svg: mom, he: false,
+    in: { gait: 'run', dur: 1.4, say: 'Она мама' }, out: { gait: 'run', dur: 1.5, say: 'Она убежала' } },
+  { svg: grandpa, he: true, noWave: true,
+    in: { gait: 'hop', dur: 2, say: 'Он дед' }, out: { gait: 'slow', dur: 7, say: 'Он ушёл' } },
+  { svg: grandma, he: false,
+    in: { gait: 'hop', dur: 2, say: 'Она баба' }, out: { gait: 'slow', dur: 7, say: 'Она ушла' } },
+  { svg: baby, he: true, noWave: true,
+    in: { gait: 'crawl', dur: 3.2, say: 'Это малыш' }, out: { gait: 'crawl', dur: 3.6, say: 'Он уполз' } },
+  { svg: smallGirl, he: false, wave: -110,
+    in: { gait: 'toddle', dur: 2.8, say: 'Она малышка' }, out: { gait: 'toddle', dur: 3.6, say: 'Она ушла' } },
+  { svg: motorbike, he: true, noWave: true, engine: true,
+    in: { gait: 'ride', dur: 2.2, say: 'Он дядя' }, out: { gait: 'ride', dur: 2.4, accel: true, say: 'Он уехал' } },
+  { svg: bicycle, he: false, noWave: true,
+    in: { gait: 'ride', dur: 2.8, say: 'Она тётя' }, out: { gait: 'ride', dur: 3.2, say: 'Она уехала' } },
+];
+
+const GAITS = {
+  run:    { freq: 13, amp: 42, bob: 7 },
+  walk:   { freq: 7,  amp: 24, bob: 3 },
+  toddle: { freq: 9,  amp: 20, bob: 3 },
+  slow:   { freq: 3,  amp: 12, bob: 1.5 },
+  hop:    { freq: 7,  amp: 25, bob: 0, hops: 3, height: 55 },
+  crawl:  { freq: 6,  amp: 18, bob: 1 },
+  ride:   { freq: 0,  amp: 0,  bob: 0 },
+};
+
+/* ---------- сцена ---------- */
+const svg = $('#scene'), bgG = $('#bg'), cloudsG = $('#clouds'), actor = $('#actor'), shadow = $('#shadow');
+const caption = $('#caption'), hint = $('#hint');
+
+let W = 0, H = 0, ground = 0, k = 1, u = 1;
+
+const FLOWERS = Array.from({ length: 16 }, (_, i) => ({
+  fx: (i + Math.random()) / 16, fy: 0.68 + Math.random() * 0.1,
+  c: ['#ff7043', '#ffeb3b', '#ec407a', '#fff'][i % 4],
+}));
+
+function layout() {
+  W = window.innerWidth; H = window.innerHeight;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  ground = H * 0.88;
+  k = Math.min(H * 0.58 / 205, W * 0.8 / 230);
+  u = Math.min(H, W) / 430;   // масштаб декораций: не раздуваем их на вертикальном экране
+  bgG.innerHTML = `
+    <rect width="${W}" height="${H}" fill="url(#skyGrad)"/>
+    <g transform="translate(${W - 70 * u} ${60 * u}) scale(${u})">
+      <circle r="24" fill="#ffd54f" stroke="#ffb300" stroke-width="3"/>
+    </g>
+    <ellipse cx="${W * .2}" cy="${H * .66}" rx="${W * .36}" ry="${H * .2}" fill="#a5d6a7"/>
+    <ellipse cx="${W * .8}" cy="${H * .67}" rx="${W * .42}" ry="${H * .17}" fill="#9ccc9c"/>
+    <rect y="${H * .62}" width="${W}" height="${H * .38}" fill="#8bc34a"/>
+    <rect y="${H * .8}" width="${W}" height="${H * .15}" fill="#e6cf9c"/>
+    <rect y="${H * .8}" width="${W}" height="${H * .012}" fill="#cdb47f"/>
+    ${FLOWERS.map(f => `<circle cx="${f.fx * W}" cy="${f.fy * H}" r="${3.5 * u}" fill="${f.c}"/>`).join('')}`;
+}
+window.addEventListener('resize', layout);
+window.addEventListener('orientationchange', () => setTimeout(layout, 200));
+
+const CLOUD = `<ellipse cx="0" cy="12" rx="70" ry="18" fill="#eef7fd"/>
+  <g fill="#fff"><ellipse cx="0" cy="8" rx="66" ry="18"/><circle cx="-30" cy="0" r="22"/>
+  <circle cx="4" cy="-12" r="30"/><circle cx="36" cy="-2" r="22"/></g>`;
+const clouds = Array.from({ length: 4 }, (_, i) => {
+  const el = document.createElementNS(SVG_NS, 'g');
+  el.innerHTML = CLOUD;
+  cloudsG.appendChild(el);
+  return { fx: (i + Math.random() * .6) / 4, fy: 0.1 + Math.random() * 0.34, s: 0.5 + Math.random() * 0.5, el };
+});
+
+/* ---------- озвучка (встроенный синтезатор речи) ---------- */
+const synth = window.speechSynthesis || null;
+let ruVoice = null, lastUtterance = null;
+
+function pickVoice() {
+  if (!synth) return;
+  const voices = synth.getVoices();
+  const ru = voices.filter(v => /^ru/i.test(v.lang));
+  ruVoice = ru.find(v => /premium|enhanced|улучш/i.test(v.name)) || ru[0] || null;
+  return voices.length > 0 && !ruVoice;
+}
+function checkVoice() {
+  if (!synth || pickVoice()) $('#noVoice').classList.remove('hidden');
+  else $('#noVoice').classList.add('hidden');
+}
+if (synth) {
+  pickVoice();
+  if ('onvoiceschanged' in synth) synth.addEventListener('voiceschanged', () => { if (phase === 'start') pickVoice(); else checkVoice(); });
+}
+
+function speak(text) {
+  if (!synth) return;
+  try {
+    synth.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'ru-RU';
+    if (ruVoice) u.voice = ruVoice;
+    u.rate = 0.85;
+    lastUtterance = u;   // иначе Safari может собрать фразу сборщиком мусора и оборвать её
+    synth.speak(u);
+  } catch (e) {}
+}
+
+/* ---------- звук мотоцикла (Web Audio) ---------- */
+let ac = null, engine = null;
+function unlockAudio() {
+  try {
+    if (!ac) { const C = window.AudioContext || window.webkitAudioContext; if (C) ac = new C(); }
+    if (ac && ac.state !== 'running') ac.resume();
+  } catch (e) {}
+}
+function engineStart() {
+  if (!ac || engine) return;
+  const g = ac.createGain(), f = ac.createBiquadFilter();
+  const o1 = ac.createOscillator(), o2 = ac.createOscillator();
+  const lfo = ac.createOscillator(), lg = ac.createGain();
+  g.gain.value = 0.0001;
+  f.type = 'lowpass'; f.frequency.value = 650;
+  o1.type = 'sawtooth'; o1.frequency.value = 70;
+  o2.type = 'square'; o2.frequency.value = 35.5;
+  lfo.frequency.value = 17; lg.gain.value = 0.03;
+  o1.connect(f); o2.connect(f); f.connect(g); g.connect(ac.destination);
+  lfo.connect(lg); lg.connect(g.gain);
+  o1.start(); o2.start(); lfo.start();
+  engine = { g, o1, o2, lfo };
+}
+function engineTo(freq, vol, time) {
+  if (!engine) return;
+  const t = ac.currentTime;
+  [[engine.o1.frequency, freq], [engine.o2.frequency, freq * .507], [engine.g.gain, vol]].forEach(([p, v]) => {
+    p.cancelScheduledValues(t);
+    p.setValueAtTime(p.value, t);
+    p.linearRampToValueAtTime(v, t + time);
+  });
+}
+function engineStop(time) {
+  if (!engine) return;
+  const e = engine, t = ac.currentTime;
+  engine = null;
+  e.g.gain.cancelScheduledValues(t);
+  e.g.gain.setValueAtTime(e.g.gain.value, t);
+  e.g.gain.linearRampToValueAtTime(0.0001, t + time);
+  [e.o1, e.o2, e.lfo].forEach(o => o.stop(t + time + 0.05));
+}
+
+/* ---------- сборка анимации персонажа ---------- */
+function setupRig(root) {
+  const nums = (el, a) => el.getAttribute(a).split(',').map(Number);
+  const limbs = [...root.querySelectorAll('[data-role]')].map(el => {
+    const [px, py] = nums(el, 'data-pivot');
+    return { el, px, py, role: el.getAttribute('data-role'), a: 0 };
+  });
+  const wheels = [...root.querySelectorAll('[data-wheel]')].map(el => {
+    const [cx, cy] = nums(el, 'data-wheel');
+    return { el, cx, cy };
+  });
+  const puffs = [...root.querySelectorAll('[data-puff]')].map(el => {
+    const [x, y, i] = nums(el, 'data-puff');
+    return { el, x, y, i };
+  });
+  const legs = [...root.querySelectorAll('[data-leg]')].map(el => {
+    const [hx, hy, bx, by, crank, off, l1, l2] = nums(el, 'data-leg');
+    return { el, shoe: el.nextElementSibling, hx, hy, bx, by, crank, off, l1, l2 };
+  });
+  const cranks = [...root.querySelectorAll('[data-crank]')].map(el => {
+    const [bx, by, len, off] = nums(el, 'data-crank');
+    return { el, bx, by, len, off };
+  });
+  return { limbs, wheels, puffs, legs, cranks };
+}
+
+function drawPedals(rig, angle) {
+  for (const c of rig.cranks) {
+    const a = angle + c.off;
+    c.el.setAttribute('d', `M${c.bx},${c.by} L${(c.bx + c.len * Math.cos(a)).toFixed(1)},${(c.by + c.len * Math.sin(a)).toFixed(1)}`);
+  }
+  for (const l of rig.legs) {
+    const a = angle + l.off;
+    const fx = l.bx + l.crank * Math.cos(a), fy = l.by + l.crank * Math.sin(a);
+    const dx = fx - l.hx, dy = fy - l.hy, d = Math.hypot(dx, dy);
+    const along = (l.l1 * l.l1 - l.l2 * l.l2 + d * d) / (2 * d);
+    const h = Math.sqrt(Math.max(0, l.l1 * l.l1 - along * along));
+    // колено всегда вперёд по ходу движения
+    const kx = l.hx + along * dx / d + h * dy / d, ky = l.hy + along * dy / d - h * dx / d;
+    const knee = kx >= l.hx ? [kx, ky] : [l.hx + along * dx / d - h * dy / d, l.hy + along * dy / d + h * dx / d];
+    l.el.setAttribute('d', `M${l.hx},${l.hy} L${knee[0].toFixed(1)},${knee[1].toFixed(1)} L${fx.toFixed(1)},${fy.toFixed(1)}`);
+    l.shoe.setAttribute('cx', (fx + 4).toFixed(1));
+    l.shoe.setAttribute('cy', fy.toFixed(1));
+  }
+}
+
+/* ---------- ход игры ---------- */
+let phase = 'start';          // start | in | idle | out | gone
+let idx = -1, cur = null, rig = null;
+let T = 0, tPhase = 0, gaitT = 0, x = 0, x0 = 0, wheelA = 0, pedalA = 0, lastX = 0;
+
+const margin = () => 130 * k;
+
+function setCaption(text, he) {
+  caption.className = he ? 'he' : 'she';
+  const box = caption.firstElementChild;
+  box.textContent = text;
+  box.style.animation = 'none'; void box.offsetWidth; box.style.animation = '';
+}
+
+function enter() {
+  engineStop(0.15);
+  cur = CHARACTERS[idx];
+  actor.innerHTML = `<g>${cur.svg}</g>`;
+  rig = setupRig(actor.firstElementChild);
+  phase = 'in'; tPhase = 0;
+  x = x0 = lastX = -margin();
+  wheelA = 0; pedalA = 0;
+  drawPedals(rig, pedalA);
+  shadow.removeAttribute('display');
+  setCaption(cur.in.say, cur.he);
+  speak(cur.in.say);
+  if (cur.engine) { engineStart(); engineTo(85, 0.2, 0.2); }
+}
+
+function leave() {
+  phase = 'out'; tPhase = 0;
+  x0 = x;
+  setCaption(cur.out.say, cur.he);
+  speak(cur.out.say);
+  if (cur.engine) { engineStart(); engineTo(190, 0.22, cur.out.dur * 0.8); }
+}
+
+let lastTap = -Infinity;
+function onTap() {
+  const now = performance.now();
+  if (now - lastTap < 350) return;
+  lastTap = now;
+  unlockAudio();
+  if (phase === 'start') {
+    $('#start').classList.add('hidden');
+    caption.classList.remove('hidden');
+    hint.classList.remove('hidden');
+    checkVoice();
+    idx = 0;
+    enter();
+  } else if (phase === 'in' || phase === 'idle') {
+    leave();
+  } else {
+    idx = (idx + 1) % CHARACTERS.length;
+    enter();
+  }
+}
+// На iOS речь и звук разрешены только из touchend/click, а не из pointerdown
+document.addEventListener('touchend', e => { e.preventDefault(); onTap(); }, { passive: false });
+document.addEventListener('click', onTap);
+
+function limbTarget(role, g, moving) {
+  if (!moving) {
+    if (role === 'armF' && !cur.noWave) return (cur.wave || -150) + 15 * Math.sin(T * 7);
+    return 0;
+  }
+  const s = Math.sin(gaitT * g.freq);
+  if (g.hops) {
+    if (role === 'legF') return g.amp * s;
+    if (role === 'legB') return -g.amp * s;
+    return role === 'armF' ? -150 : -130;
+  }
+  if (role === 'legF') return g.amp * s;
+  if (role === 'legB') return -g.amp * s;
+  if (role === 'armF') return -g.amp * .8 * s;
+  return g.amp * .8 * s;
+}
+
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  T += dt;
+
+  for (const c of clouds) {
+    const s = c.s * u;
+    c.fx -= 8 * s * dt / W;
+    if (c.fx * W < -100 * s) c.fx = (W + 100 * s) / W;
+    c.el.setAttribute('transform', `translate(${(c.fx * W).toFixed(1)} ${(c.fy * H).toFixed(1)}) scale(${s.toFixed(3)})`);
+  }
+
+  if (rig && phase !== 'gone' && phase !== 'start') {
+    const step = phase === 'idle' ? null : cur[phase];
+    const g = step ? GAITS[step.gait] : GAITS.ride;
+    let y = 0;
+
+    if (step) {
+      tPhase += dt; gaitT += dt;
+      const p = Math.min(1, tPhase / step.dur);
+      if (phase === 'in') {
+        x = lerp(x0, W / 2, p * (2 - p));
+      } else {
+        x = lerp(x0, W + margin(), step.accel ? p * p : p);
+      }
+      y = g.hops
+        ? -Math.abs(Math.sin(Math.PI * g.hops * p)) * g.height * k
+        : -Math.abs(Math.sin(gaitT * g.freq)) * g.bob * k;
+      if (p >= 1) {
+        if (phase === 'in') {
+          phase = 'idle';
+          if (cur.engine) engineTo(42, 0.07, 0.6);
+        } else {
+          phase = 'gone';
+          engineStop(0.5);
+          actor.innerHTML = '';
+          rig = null;
+          shadow.setAttribute('display', 'none');
+        }
+      }
+    } else {
+      x = W / 2;
+      y = Math.sin(T * 2.5) * k;
+    }
+
+    if (rig) {
+      if (cur.engine) y += Math.sin(T * 47) * 0.8 * k;
+
+      const moved = (x - lastX) / k;
+      lastX = x;
+      wheelA += moved / 28 * 57.3;
+      pedalA += moved / 30 * 0.62;
+      for (const w of rig.wheels) w.el.setAttribute('transform', `rotate(${(wheelA % 360).toFixed(1)} ${w.cx} ${w.cy})`);
+      if (rig.legs.length) drawPedals(rig, pedalA);
+
+      const moving = !!step && phase !== 'idle';
+      for (const l of rig.limbs) {
+        l.a += (limbTarget(l.role, g, moving) - l.a) * Math.min(1, dt * 14);
+        l.el.setAttribute('transform', `rotate(${l.a.toFixed(1)} ${l.px} ${l.py})`);
+      }
+      for (const f of rig.puffs) {
+        const q = (T * (phase === 'idle' ? .6 : 1.4) + f.i / 3) % 1;
+        f.el.setAttribute('cx', (f.x - q * 50).toFixed(1));
+        f.el.setAttribute('cy', (f.y - q * 22).toFixed(1));
+        f.el.setAttribute('r', (4 + q * 11).toFixed(1));
+        f.el.setAttribute('opacity', (.8 * (1 - q)).toFixed(2));
+      }
+
+      actor.firstElementChild.setAttribute('transform', `translate(${x.toFixed(1)} ${(ground + y).toFixed(1)}) scale(${k.toFixed(3)})`);
+      const lift = Math.min(1, -y / (70 * k));
+      shadow.setAttribute('cx', x.toFixed(1));
+      shadow.setAttribute('cy', ground.toFixed(1));
+      shadow.setAttribute('rx', ((cur.svg === motorbike || cur.svg === bicycle ? 105 : 50) * k * (1 - lift * .5)).toFixed(1));
+      shadow.setAttribute('ry', (8 * k * (1 - lift * .5)).toFixed(1));
+    }
+  }
+  requestAnimationFrame(frame);
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    if (synth) synth.cancel();
+    engineStop(0.05);
+  }
+});
+
+// iOS: без зума, прокрутки и «резинки»
+document.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+document.addEventListener('gesturestart', e => e.preventDefault());
+document.addEventListener('dblclick', e => e.preventDefault());
+
+// иконка для «На экран Домой»
+try {
+  const c = document.createElement('canvas'); c.width = c.height = 180;
+  const g = c.getContext('2d');
+  g.fillStyle = '#90caf9'; g.fillRect(0, 0, 90, 180);
+  g.fillStyle = '#f8bbd0'; g.fillRect(90, 0, 90, 180);
+  g.font = '900 44px -apple-system, sans-serif'; g.textAlign = 'center';
+  g.fillStyle = '#1565c0'; g.fillText('Он', 45, 105);
+  g.fillStyle = '#d81b60'; g.fillText('Она', 135, 105);
+  const link = document.createElement('link');
+  link.rel = 'apple-touch-icon'; link.href = c.toDataURL('image/png');
+  document.head.appendChild(link);
+} catch (e) {}
+
+layout();
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
