@@ -26,28 +26,13 @@
     position: absolute; left: 0; right: 0;
     bottom: max(10px, env(safe-area-inset-bottom, 0px));
     padding: 0 calc(env(safe-area-inset-right, 0px) + 16px) 0 calc(env(safe-area-inset-left, 0px) + 16px);
-    display: flex; justify-content: center; gap: 5vw;
+    display: flex; justify-content: center;
   }
-  .btn {
-    -webkit-appearance: none; appearance: none; font-family: inherit;
-    min-width: 28vw; padding: .3em 1em; border-radius: 999px;
-    border: 5px solid #fff; color: #fff; font-weight: 900;
-    font-size: clamp(28px, 9vh, 46px);
-    text-shadow: 0 2px 0 rgba(0,0,0,.2);
-    transition: transform .08s, box-shadow .08s, opacity .25s, filter .25s;
-  }
-  .btn.he  { background: #1e88e5; box-shadow: 0 7px 0 #1565c0, 0 12px 20px rgba(0,0,0,.18); }
-  .btn.she { background: #ec407a; box-shadow: 0 7px 0 #c2185b, 0 12px 20px rgba(0,0,0,.18); }
-  .btn.down { transform: translateY(5px); }
-  .btn.he.down  { box-shadow: 0 2px 0 #1565c0; }
-  .btn.she.down { box-shadow: 0 2px 0 #c2185b; }
-  /* неактивные кнопки: тот же цвет, только бледнее — полупрозрачность поверх травы меняла бы цвет */
-  #controls.off .btn { filter: saturate(.55) brightness(1.18); transform: scale(.94); }
 
   /* микрофон: пульсирует, пока слушает; подпрыгивает, если нужно нажать */
   #mic {
     -webkit-appearance: none; appearance: none; flex: none; align-self: center; padding: 0;
-    width: clamp(56px, 16vh, 76px); height: clamp(56px, 16vh, 76px); border-radius: 50%;
+    width: clamp(72px, 22vh, 100px); height: clamp(72px, 22vh, 100px); border-radius: 50%;
     border: 5px solid #fff; background: #fff;
     box-shadow: 0 6px 0 #cfd8dc, 0 10px 18px rgba(0,0,0,.18);
     display: flex; align-items: center; justify-content: center;
@@ -109,16 +94,14 @@
 </svg>
 
 <div id="controls" class="hidden off">
-  <button id="he" class="btn he">Он</button>
   <button id="mic" aria-label="Микрофон"><svg viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="13" rx="4" fill="#e53935"/>
     <path d="M5 11a7 7 0 0 0 14 0M12 18v4M8 22h8" stroke="#e53935" stroke-width="2.2" fill="none" stroke-linecap="round"/></svg></button>
-  <button id="she" class="btn she">Она</button>
 </div>
 <div id="heard" class="hidden"></div>
 
 <div id="start">
   <h1><span class="a">Он</span> или <span class="b">она</span>?</h1>
-  <p class="note">🎤 + голос: можно ответить «он» или «она»</p>
+  <p class="note">🎤 Отвечай голосом: «он» или «она»</p>
   <div id="startBtn">Старт</div>
 </div>
 
@@ -496,7 +479,7 @@ const GAITS = {
 
 /* ---------- сцена ---------- */
 const svg = $('#scene'), bgG = $('#bg'), cloudsG = $('#clouds'), actor = $('#actor'), shadow = $('#shadow'), fxG = $('#fx');
-const controls = $('#controls'), btnHe = $('#he'), btnShe = $('#she');
+const controls = $('#controls');
 
 let W = 0, H = 0, ground = 0, k = 1, u = 1;
 
@@ -972,20 +955,6 @@ function answer(he) {
   }
 }
 
-function bindAnswer(btn, he) {
-  btn.addEventListener('pointerdown', e => {
-    e.stopPropagation();
-    unlockAudio();
-    btn.classList.add('down');
-    answer(he);
-  });
-  const up = () => btn.classList.remove('down');
-  btn.addEventListener('pointerup', up);
-  btn.addEventListener('pointercancel', up);
-  btn.addEventListener('pointerleave', up);
-}
-bindAnswer(btnHe, true);
-bindAnswer(btnShe, false);
 document.addEventListener('keydown', e => {
   if (e.key === 'ArrowLeft') answer(true);
   if (e.key === 'ArrowRight') answer(false);
