@@ -1,0 +1,1071 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Летает? голос">
+<meta name="theme-color" content="#4fa8f0">
+<title>Летает — не летает? + голос</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #4fa8f0; }
+  body {
+    position: fixed; inset: 0;
+    touch-action: none; overscroll-behavior: none;
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
+    font-family: ui-rounded, "SF Pro Rounded", -apple-system, system-ui, sans-serif;
+  }
+  #scene { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .hidden { display: none !important; }
+
+  button { -webkit-appearance: none; appearance: none; font-family: inherit; cursor: pointer; }
+
+  /* счёт */
+  #hud {
+    position: absolute; left: 50%; transform: translateX(-50%);
+    top: calc(env(safe-area-inset-top, 0px) + 8px);
+    display: flex; gap: 18px; padding: 6px 18px; border-radius: 999px;
+    background: rgba(255,255,255,.4); color: #1d3b5c;
+    font-size: clamp(16px, 5vh, 24px); font-weight: 800;
+  }
+
+  /* микрофон: пульсирует, пока слушает; подпрыгивает, если нужно нажать */
+  #controls {
+    position: absolute; left: 0; right: 0; display: flex; justify-content: center;
+    bottom: max(10px, env(safe-area-inset-bottom, 0px));
+  }
+  #mic {
+    padding: 0; width: clamp(64px, 19vh, 90px); height: clamp(64px, 19vh, 90px); border-radius: 50%;
+    border: 5px solid #fff; background: #fff;
+    box-shadow: 0 6px 0 #90caf9, 0 10px 18px rgba(0,0,0,.15);
+    display: flex; align-items: center; justify-content: center;
+  }
+  #mic svg { width: 60%; height: 60%; }
+  #mic.listening { background: #ffebee; animation: listen 1.1s ease-out infinite; }
+  #mic.need { animation: nudge 1s ease-in-out infinite; }
+  #controls.off #mic { filter: saturate(.55) brightness(1.1); transform: scale(.94); }
+  @keyframes listen { 0% { box-shadow: 0 0 0 0 rgba(229,57,53,.55); } 100% { box-shadow: 0 0 0 18px rgba(229,57,53,0); } }
+  @keyframes nudge { 50% { transform: scale(1.12); } }
+
+  /* что услышал iPhone — подсказка для взрослого */
+  #heard {
+    position: absolute; left: 50%; transform: translateX(-50%);
+    top: calc(env(safe-area-inset-top, 0px) + 52px); padding: 4px 16px; border-radius: 999px;
+    background: rgba(255,255,255,.92); color: #37474f; white-space: nowrap; pointer-events: none;
+    font-size: clamp(15px, 4.5vh, 22px); font-weight: 800;
+  }
+
+  /* сообщение о результате */
+  #msg {
+    position: absolute; left: 50%; top: 42%; transform: translate(-50%, -50%);
+    pointer-events: none; text-align: center;
+  }
+  #msg .card {
+    background: rgba(255,255,255,.93); border-radius: 28px;
+    padding: 14px 34px 12px; box-shadow: 0 12px 30px rgba(0,0,0,.18);
+    animation: pop .35s cubic-bezier(.2,1.6,.4,1) both;
+  }
+  #msg .big { font-size: clamp(34px, 12vh, 64px); font-weight: 900; line-height: 1.1; white-space: nowrap; }
+  #msg.good .big { color: #2e7d32; }
+  #msg.bad  .big { color: #e65100; }
+  #msg .sub  { font-size: clamp(16px, 5vh, 24px); font-weight: 700; color: #37474f; margin-top: 4px; }
+  #msg .sub:empty { display: none; }
+  /* короткая подсказка во время полёта: меньше и ниже, чтобы не закрывать предмет */
+  #msg.toast { top: 64%; }
+  #msg.toast .card { padding: 6px 22px; }
+  #msg.toast .big { font-size: clamp(22px, 7vh, 36px); }
+  @keyframes pop { from { transform: scale(.3); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+  /* стартовый экран */
+  #start {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 2vh; text-align: center;
+  }
+  #start h1 {
+    margin: 0; color: #fff; font-size: clamp(30px, 11vh, 58px); font-weight: 900;
+    text-shadow: 0 4px 0 #2f7fd0, 0 10px 24px rgba(0,0,0,.2);
+  }
+  #start p {
+    margin: 0 0 2vh; color: #fff; font-size: clamp(15px, 4.6vh, 22px); font-weight: 700;
+    text-shadow: 0 2px 0 #2f7fd0;
+  }
+  #startBtn {
+    background: #ffb300; color: #fff; border: 5px solid #fff; border-radius: 999px;
+    font-size: clamp(26px, 9vh, 42px); font-weight: 900; padding: .3em 1.7em;
+    box-shadow: 0 7px 0 #e08e00, 0 14px 26px rgba(0,0,0,.2);
+    text-shadow: 0 2px 0 rgba(0,0,0,.2);
+    animation: breathe 1.6s ease-in-out infinite;
+  }
+  @keyframes breathe { 50% { transform: scale(1.06); } }
+
+  /* просьба повернуть телефон */
+  #rotate {
+    display: none; position: fixed; inset: 0; z-index: 10;
+    background: #4fa8f0; color: #fff; font-weight: 800; font-size: 22px;
+    flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 24px;
+  }
+  #rotate .phone { font-size: 72px; animation: turn 2s ease-in-out infinite; }
+  @keyframes turn { 0%, 30% { transform: rotate(0); } 60%, 100% { transform: rotate(-90deg); } }
+  @media (orientation: portrait) { #rotate { display: flex; } }
+</style>
+</head>
+<body>
+
+<svg id="scene" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="skyGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4fa8f0"/>
+      <stop offset="1" stop-color="#c4e8ff"/>
+    </linearGradient>
+    <radialGradient id="sunGlow">
+      <stop offset="0" stop-color="#fff59d" stop-opacity=".9"/>
+      <stop offset="1" stop-color="#fff59d" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect id="sky" x="0" y="0" width="100%" height="100%" fill="url(#skyGrad)"/>
+  <g id="sun">
+    <circle r="62" fill="url(#sunGlow)"/>
+    <g id="rays" stroke="#ffca28" stroke-width="5" stroke-linecap="round"></g>
+    <circle r="24" fill="#ffd54f" stroke="#ffb300" stroke-width="3"/>
+    <circle cx="-8" cy="-4" r="2.6" fill="#8d5a00"/>
+    <circle cx="8" cy="-4" r="2.6" fill="#8d5a00"/>
+    <path d="M-9,5 Q0,13 9,5" stroke="#8d5a00" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+  </g>
+  <g id="clouds"></g>
+  <g id="actor"></g>
+</svg>
+
+<div id="hud" class="hidden"><span>⭐ <b id="ok">0</b></span><span>❌ <b id="bad">0</b></span></div>
+
+<div id="controls" class="hidden off">
+  <button id="mic" aria-label="Микрофон"><svg viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="13" rx="4" fill="#e53935"/>
+    <path d="M5 11a7 7 0 0 0 14 0M12 18v4M8 22h8" stroke="#e53935" stroke-width="2.2" fill="none" stroke-linecap="round"/></svg></button>
+</div>
+<div id="heard" class="hidden"></div>
+
+<div id="msg" class="hidden"><div class="card">
+  <div class="big"></div>
+  <div class="sub"></div>
+</div></div>
+
+<div id="start">
+  <h1>Летает — не летает?</h1>
+  <p>🎤 Отвечай голосом:<br>«летает» или «не летает»</p>
+  <button id="startBtn">Старт</button>
+</div>
+
+<div id="rotate"><div class="phone">📱</div><p>Поверни телефон горизонтально</p></div>
+
+<script id="voiceData" type="application/json">{"Летает или не летает?": "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qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqpMQU1FNC4wqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq//OExEwAAANIAAAAAKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqpMQU1FNC4wqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq//OExEwAAANIAAAAAKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqpMQU1FNC4wqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq//OExEwAAANIAAAAAKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqpMQU1FNC4wqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq//OExEwAAANIAAAAAKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq", "Молодец!": "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a9K1sVyHM0bwWX6Yn24IsgFJOBJGkSVyiCjf3efAUcOUSFDs//OExPQqBC6OXnmRMDgElsnI0cl3ROuqYGCiSWm//9yP7lAKzUey6BiQVYBglv/nK//womHBXRPVlWl6hhRBkY6CFVVY15VVAoCjMx+zcbY11/b5sxw9qaxqpUlX//Y1hyN1Sqr2bdWYEvN0FFG//nHQotVMQU1FNC4wVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//OExOknC8pqPHmG/VVVVVVVVVVVVVVVVVVVVVVVVVVVVR6knG5a5bLI09CI00Iy7RGnNefYSMvoRkfztF/hIvf9mXphEZGaZ//8yaEZGf/Iya8yr/QjQia5oRMIjTTI7/zsJff/+Rp5kX8t7HJlBBmx3+tMQU1FNC4wVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//OExJ4Ug85FvghHflVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVMQU1FNC4wVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//OExEwAAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVMQU1FNC4wVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//OExEwAAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVMQU1FNC4wVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//OExEwAAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVMQU1FNC4wVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//OExEwAAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVMQU1FNC4wVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//OExEwAAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVMQU1FNC4wVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//OExEwAAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV", "Попробуй ещё раз.": "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h/PjlV1DKFE5y5BQRsbWARMdAdqRBmaM3P7/S2/hznSv7fwVMMKK2D2LlRpZ5LPPKlXyJV0RB1cqGliENLBVhKCvxypMQU1FNC4wqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq//OExNEhCtI1vtMGNKqqqqqqqqqqqqqqqqqqqqqqqqqqqqoBS3bb7////hg89FiwEJSAdJPKksi07JBXzz8JSISf6QqAivrGAIkewkPATfYPLEtZF1SEt4FYPLBoKwESfLEgq4sSftApGsi6KaKv/9RVnK1MQU1FNC4wVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//OExJ0UKAZGXhBGAlVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVMQU1FNC4wVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//OExEwAAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVMQU1FNC4wVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//OExEwAAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVMQU1FNC4wVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//OExEwAAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVMQU1FNC4wVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//OExEwAAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVMQU1FNC4wVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//OExEwAAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVMQU1FNC4wVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//OExEwAAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVMQU1FNC4wVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//OExEwAAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV"}</script>
+
+<script>
+(() => {
+'use strict';
+
+const $ = s => document.querySelector(s);
+const DURATION = 10;          // секунд на пролёт объекта через экран
+const rnd = (a, b) => a + Math.random() * (b - a);
+
+/* ---------- рисунки объектов (смотрят влево, центр в 0,0, ширина ~200) ---------- */
+
+// зубчики для крокодила
+function zig(x0, x1, y, h, n) {
+  const step = (x1 - x0) / n;
+  let d = `M${x0},${y}`;
+  for (let i = 0; i < n; i++) d += ` L${x0 + step * (i + .5)},${y + h} L${x0 + step * (i + 1)},${y}`;
+  return d + 'Z';
+}
+// гребень на спине крокодила
+function scutes() {
+  let d = '';
+  for (let x = -24; x <= 48; x += 9) {
+    const y = 2 - 20 * Math.sqrt(Math.max(0, 1 - ((x - 10) / 52) ** 2));
+    d += `M${x - 4},${y + 2} L${x},${y - 6} L${x + 4},${y + 2}Z `;
+  }
+  return d;
+}
+// бантик на хвосте змея
+const bow = (x, y, c) =>
+  `<path d="M${x - 8},${y - 6} L${x},${y} L${x - 8},${y + 6}Z M${x + 8},${y - 6} L${x},${y} L${x + 8},${y + 6}Z" fill="${c}"/>`;
+
+const OBJECTS = [
+  { id: 'elephant', flies: false, say: 'Слон не летает', svg: `
+    <path d="M86,-8 Q102,0 98,20" stroke="#7d868f" stroke-width="5" fill="none" stroke-linecap="round" data-sway="86,-8,14,3"/>
+    <rect x="58" y="14" width="20" height="44" rx="8" fill="#8c959e" data-sway="68,14,12,6,0"/>
+    <rect x="-24" y="14" width="20" height="44" rx="8" fill="#8c959e" data-sway="-14,14,12,6,3"/>
+    <ellipse cx="28" cy="0" rx="64" ry="40" fill="#a3acb5"/>
+    <rect x="38" y="16" width="22" height="44" rx="8" fill="#a3acb5" data-sway="49,16,14,6,1.5"/>
+    <rect x="-6" y="16" width="22" height="44" rx="8" fill="#a3acb5" data-sway="5,16,14,6,4.5"/>
+    <circle cx="-46" cy="-16" r="32" fill="#a3acb5"/>
+    <path d="M-66,10 Q-74,24 -90,22" stroke="#fffdf5" stroke-width="6" fill="none" stroke-linecap="round"/>
+    <path d="M-64,-2 C-92,8 -96,36 -86,48 C-80,55 -70,50 -74,42" stroke="#a3acb5" stroke-width="15" fill="none" stroke-linecap="round" data-sway="-64,-2,10,2.2"/>
+    <g data-sway="-40,-14,16,7">
+      <ellipse cx="-24" cy="-12" rx="20" ry="28" fill="#959ea8" stroke="#7d868f" stroke-width="3"/>
+      <ellipse cx="-24" cy="-12" rx="11" ry="17" fill="#e8b4b8" opacity=".7"/>
+    </g>
+    <circle cx="-58" cy="-24" r="4.5" fill="#222"/><circle cx="-56.5" cy="-25.5" r="1.5" fill="#fff"/>` },
+
+  { id: 'crow', flies: true, say: 'Ворона летает', svg: `
+    <path d="M50,-2 L100,-14 L104,4 L100,22 L50,14 Z" fill="#1f1f24"/>
+    <path data-flap="-6,9,0.5" d="M-6,-6 C4,-56 50,-70 74,-56 C54,-42 34,-20 24,-4 Z" fill="#1a1a1f"/>
+    <ellipse cx="12" cy="4" rx="50" ry="24" fill="#26262d"/>
+    <path d="M10,26 l-6,10 M18,26 l-4,10" stroke="#555" stroke-width="3" stroke-linecap="round"/>
+    <circle cx="-40" cy="-8" r="21" fill="#26262d"/>
+    <path d="M-56,-14 L-90,-5 L-56,2 Z" fill="#4a4a52"/><path d="M-58,-6 L-86,-5" stroke="#26262d" stroke-width="1.5"/>
+    <circle cx="-46" cy="-13" r="5" fill="#fff"/><circle cx="-47.5" cy="-13" r="2.6" fill="#111"/>
+    <g data-flap="-4,9">
+      <path d="M-10,-4 C0,-60 50,-74 78,-58 C56,-44 34,-20 24,-2 Z" fill="#34343c" stroke="#1a1a1f" stroke-width="2"/>
+      <path d="M14,-30 L40,-52 M24,-18 L56,-44 M34,-10 L64,-36" stroke="#1a1a1f" stroke-width="2" stroke-linecap="round"/>
+    </g>` },
+
+  { id: 'iron', flies: false, say: 'Утюг не летает', svg: `
+    <path d="M86,12 C110,12 104,44 132,40" stroke="#333" stroke-width="4" fill="none" stroke-linecap="round" data-sway="86,12,12,3"/>
+    <path d="M-18,-26 C-18,-72 70,-72 70,-26" stroke="#2b2b2b" stroke-width="15" fill="none" stroke-linecap="round"/>
+    <path d="M-98,34 C-76,-6 -30,-28 30,-28 L86,-28 L86,34 Z" fill="#e53935"/>
+    <path d="M-60,4 C-40,-14 -10,-22 20,-24" stroke="#ff8a80" stroke-width="5" fill="none" stroke-linecap="round" opacity=".8"/>
+    <path d="M-104,34 L92,34 L92,48 Q92,50 88,50 L-96,50 Z" fill="#cfd8dc" stroke="#90a4ae" stroke-width="2"/>
+    <circle cx="30" cy="4" r="11" fill="#fff" stroke="#b71c1c" stroke-width="3"/>
+    <path d="M30,4 L30,-4" stroke="#b71c1c" stroke-width="3" stroke-linecap="round"/>
+    <circle cx="64" cy="14" r="4" fill="#ffeb3b"/>` },
+
+  { id: 'plane', flies: true, say: 'Самолёт летает', svg: `
+    <path d="M-8,-6 L30,-36 L44,-36 L24,-6 Z" fill="#b8c2cf"/>
+    <path d="M-100,2 Q-98,-18 -70,-18 L75,-18 Q95,-18 100,-10 L100,8 Q90,14 70,14 L-75,14 Q-100,14 -100,2 Z" fill="#f4f6fa" stroke="#8899aa" stroke-width="2"/>
+    <path d="M60,-18 L88,-56 L102,-56 L96,-18 Z" fill="#2f6fd6"/>
+    <path d="M70,2 L100,-2 L108,8 L80,8 Z" fill="#2f6fd6"/>
+    <rect x="-80" y="4" width="160" height="3" fill="#2f6fd6"/>
+    <path d="M-92,-6 Q-85,-16 -72,-15 L-72,-6 Z" fill="#6fc3ff"/>
+    <g fill="#6fc3ff">
+      <circle cx="-55" cy="-6" r="4"/><circle cx="-40" cy="-6" r="4"/><circle cx="-25" cy="-6" r="4"/>
+      <circle cx="-10" cy="-6" r="4"/><circle cx="5" cy="-6" r="4"/><circle cx="20" cy="-6" r="4"/>
+      <circle cx="35" cy="-6" r="4"/><circle cx="50" cy="-6" r="4"/>
+    </g>
+    <ellipse cx="16" cy="24" rx="16" ry="7" fill="#90a4ae"/>
+    <path d="M-22,4 L32,46 L50,46 L28,4 Z" fill="#2f6fd6"/>` },
+
+  { id: 'croc', flies: false, say: 'Крокодил не летает', svg: `
+    <path d="M44,-10 C72,-14 100,-6 124,6 C100,12 72,18 44,16 Z" fill="#2e7d32" data-sway="44,3,6,3"/>
+    <rect x="36" y="12" width="14" height="22" rx="6" fill="#2e7d32" data-sway="43,12,25,8,0"/>
+    <rect x="-24" y="12" width="14" height="22" rx="6" fill="#2e7d32" data-sway="-17,12,25,8,3"/>
+    <g data-sway="-34,6,-7,4">
+      <path d="M-34,4 L-104,6 C-100,15 -64,20 -34,16 Z" fill="#43a047"/>
+      <path d="${zig(-96, -40, 6, -6, 6)}" fill="#fff"/>
+    </g>
+    <ellipse cx="10" cy="2" rx="52" ry="20" fill="#388e3c"/>
+    <ellipse cx="10" cy="12" rx="44" ry="8" fill="#9ccc65"/>
+    <path d="${scutes()}" fill="#1b5e20"/>
+    <rect x="18" y="14" width="14" height="22" rx="6" fill="#388e3c" data-sway="25,14,25,8,1.5"/>
+    <rect x="-38" y="14" width="14" height="22" rx="6" fill="#388e3c" data-sway="-31,14,25,8,4.5"/>
+    <path d="M-30,-16 C-62,-18 -92,-12 -108,-2 Q-110,4 -104,4 L-30,4 Z" fill="#388e3c"/>
+    <path d="${zig(-100, -40, 4, 6, 7)}" fill="#fff"/>
+    <circle cx="-100" cy="-5" r="2" fill="#1b5e20"/>
+    <circle cx="-40" cy="-16" r="9" fill="#388e3c"/>
+    <circle cx="-40" cy="-18" r="6" fill="#fff59d"/>
+    <ellipse cx="-41" cy="-18" rx="1.6" ry="4.5" fill="#111"/>` },
+
+  { id: 'heli', flies: true, say: 'Вертолёт летает', svg: `
+    <path d="M14,-12 L98,-16 L98,-6 L14,10 Z" fill="#f5a623"/>
+    <path d="M90,-16 L100,-42 L108,-42 L104,-6 Z" fill="#e0901a"/>
+    <g data-spin="102,-24,25">
+      <rect x="99.5" y="-40" width="5" height="32" rx="2.5" fill="#555"/>
+      <rect x="86" y="-26.5" width="32" height="5" rx="2.5" fill="#555"/>
+    </g>
+    <circle cx="102" cy="-24" r="3" fill="#333"/>
+    <g stroke="#555" stroke-width="5" stroke-linecap="round" fill="none">
+      <path d="M-40,26 L-44,42 M10,26 L12,42"/>
+      <path d="M-72,36 Q-70,42 -60,42 L34,42"/>
+    </g>
+    <ellipse cx="-22" cy="0" rx="50" ry="30" fill="#f5a623"/>
+    <path d="M-68,10 Q-22,24 24,10" stroke="#fff" stroke-width="4" fill="none" stroke-linecap="round"/>
+    <path d="M-70,-4 Q-66,-26 -34,-27 L-26,-27 L-26,-4 Z" fill="#8fd3ff" stroke="#e0901a" stroke-width="2"/>
+    <rect x="-16" y="-18" width="20" height="14" rx="3" fill="#8fd3ff"/>
+    <rect x="-27" y="-38" width="10" height="10" fill="#555"/>
+    <g data-rotor="-22,18"><rect x="-122" y="-44" width="200" height="6" rx="3" fill="#444"/></g>
+    <ellipse cx="-22" cy="-41" rx="7" ry="4" fill="#333"/>` },
+
+  { id: 'kite', flies: true, say: 'Воздушный змей летает', svg: `
+    <g transform="rotate(-12)">
+      <g data-sway="-10,54,14,3">
+        <path d="M-10,54 C10,74 30,40 52,58 S90,72 112,52" stroke="#6d4c41" stroke-width="2" fill="none"/>
+        ${bow(16, 60, '#e53935')}${bow(52, 58, '#1e88e5')}${bow(88, 64, '#fdd835')}
+      </g>
+      <path d="M-10,-60 L-46,-18 L-10,-18 Z" fill="#e53935"/>
+      <path d="M-10,-60 L26,-18 L-10,-18 Z" fill="#fdd835"/>
+      <path d="M-46,-18 L-10,54 L-10,-18 Z" fill="#1e88e5"/>
+      <path d="M26,-18 L-10,54 L-10,-18 Z" fill="#43a047"/>
+      <path d="M-10,-60 L-10,54 M-46,-18 L26,-18" stroke="#6d4c41" stroke-width="2.5"/>
+      <path d="M-10,-60 L26,-18 L-10,54 L-46,-18 Z" stroke="#6d4c41" stroke-width="2" fill="none" stroke-linejoin="round"/>
+    </g>` },
+
+  { id: 'ship', flies: false, say: 'Корабль не летает', svg: `
+    <path d="M-62,-6 L-62,-52" stroke="#5d4037" stroke-width="3"/>
+    <path d="M-62,-52 L-40,-46 L-62,-40 Z" fill="#e53935" data-sway="-62,-46,10,4"/>
+    <rect x="24" y="-70" width="18" height="38" fill="#ef6c00"/>
+    <rect x="24" y="-70" width="18" height="7" fill="#263238"/>
+    <rect x="-24" y="-54" width="46" height="22" rx="4" fill="#fff" stroke="#b0bec5" stroke-width="2"/>
+    <rect x="-20" y="-49" width="38" height="8" rx="2" fill="#81d4fa"/>
+    <rect x="-44" y="-34" width="96" height="30" rx="4" fill="#fafafa" stroke="#b0bec5" stroke-width="2"/>
+    <g fill="#81d4fa">
+      <rect x="-36" y="-26" width="10" height="10" rx="2"/><rect x="-20" y="-26" width="10" height="10" rx="2"/>
+      <rect x="-4" y="-26" width="10" height="10" rx="2"/><rect x="12" y="-26" width="10" height="10" rx="2"/>
+      <rect x="28" y="-26" width="10" height="10" rx="2"/>
+    </g>
+    <path d="M-112,-6 L102,-6 L92,40 L-74,40 Z" fill="#1e3a8a"/>
+    <path d="M-87,24 L95.5,24 L92,40 L-74,40 Z" fill="#c62828"/>
+    <path d="M-112,-6 L102,-6" stroke="#fff" stroke-width="3"/>
+    <g fill="#fff59d" stroke="#fff" stroke-width="1.5">
+      <circle cx="-60" cy="8" r="4.5"/><circle cx="-40" cy="8" r="4.5"/><circle cx="-20" cy="8" r="4.5"/>
+      <circle cx="0" cy="8" r="4.5"/><circle cx="20" cy="8" r="4.5"/><circle cx="40" cy="8" r="4.5"/>
+      <circle cx="60" cy="8" r="4.5"/><circle cx="80" cy="8" r="4.5"/>
+    </g>
+    <g fill="#cfd8dc">
+      <circle data-puff="33,-74,0"/><circle data-puff="33,-74,1"/><circle data-puff="33,-74,2"/>
+    </g>` },
+
+  { id: 'crane', flies: true, say: 'Журавль летает', svg: `
+    <g stroke="#37474f" stroke-width="3" stroke-linecap="round"><path d="M32,6 L112,12"/><path d="M30,10 L108,20"/></g>
+    <g data-flap="-4,5.5,0.5">
+      <path d="M-12,-4 C-2,-58 50,-72 80,-58 C56,-44 34,-22 24,-2 Z" fill="#b0bec5"/>
+    </g>
+    <path d="M38,-6 C58,-6 70,6 62,14 C52,10 44,8 38,8 Z" fill="#37474f"/>
+    <ellipse cx="8" cy="0" rx="40" ry="15" fill="#eceff1"/>
+    <path d="M-24,-4 Q-52,-10 -78,-11" stroke="#eceff1" stroke-width="9" fill="none" stroke-linecap="round"/>
+    <path d="M-46,-9 Q-62,-11 -78,-11" stroke="#37474f" stroke-width="9" fill="none" stroke-linecap="round"/>
+    <circle cx="-80" cy="-11" r="8" fill="#37474f"/>
+    <path d="M-78,-7 Q-70,-5 -66,-9" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round"/>
+    <circle cx="-82" cy="-17" r="4" fill="#e53935"/>
+    <path d="M-86,-13 L-112,-9 L-86,-7 Z" fill="#6d4c41"/>
+    <circle cx="-83" cy="-12" r="1.6" fill="#fff"/>
+    <g data-flap="-4,5.5">
+      <path d="M-16,-4 C-6,-64 50,-78 84,-62 C58,-46 36,-22 24,-2 Z" fill="#f5f7f8" stroke="#b0bec5" stroke-width="1.5"/>
+      <path d="M56,-67 C68,-71 78,-67 84,-62 C74,-56 64,-50 52,-44 C55,-52 56,-60 56,-67 Z" fill="#263238"/>
+    </g>` },
+
+  { id: 'bananas', flies: false, say: 'Бананы не летают', svg: `
+    <path d="M68,-8 L98,-18 L102,-8 L72,2 Z" fill="#8d6e63"/>
+    ${[-14, 0, 14].map(a => `<g transform="rotate(${a} 72 -4)">
+      <path d="M-84,-14 C-70,34 30,46 78,-4 C40,20 -40,16 -72,-18 Z" fill="#ffd93b" stroke="#e0a800" stroke-width="2" stroke-linejoin="round"/>
+      <path d="M-72,-8 C-54,22 20,30 68,0" stroke="#f0b400" stroke-width="2" fill="none"/>
+      <circle cx="-80" cy="-15" r="4" fill="#5d4037"/>
+    </g>`).join('')}` },
+
+  { id: 'loaf', flies: false, say: 'Батон не летает', svg: `
+    <ellipse cx="0" cy="6" rx="98" ry="30" fill="#c98a3e"/>
+    <ellipse cx="0" cy="0" rx="96" ry="28" fill="#e0a458"/>
+    <ellipse cx="-4" cy="-8" rx="80" ry="15" fill="#ebb877"/>
+    <g stroke="#f7e1b5" stroke-width="7" stroke-linecap="round" fill="none">
+      ${[-60, -30, 0, 30, 60].map(x => `<path d="M${x - 6},-16 Q${x + 2},-4 ${x + 6},6"/>`).join('')}
+    </g>` },
+
+  { id: 'sofa', flies: false, say: 'Диван не летает', svg: `
+    <rect x="-84" y="22" width="10" height="16" rx="3" fill="#5d4037" data-sway="-79,22,15,7,0"/>
+    <rect x="74" y="22" width="10" height="16" rx="3" fill="#5d4037" data-sway="79,22,15,7,3"/>
+    <rect x="-90" y="-52" width="180" height="54" rx="16" fill="#1e9e8f"/>
+    <path d="M0,-48 L0,-4" stroke="#178a7c" stroke-width="3"/>
+    <circle cx="-45" cy="-28" r="3" fill="#178a7c"/><circle cx="45" cy="-28" r="3" fill="#178a7c"/>
+    <rect x="-96" y="-8" width="192" height="32" rx="10" fill="#2bbbad"/>
+    <path d="M0,-6 L0,22" stroke="#1e9e8f" stroke-width="3"/>
+    <rect x="-108" y="-30" width="28" height="56" rx="13" fill="#26a69a"/>
+    <rect x="80" y="-30" width="28" height="56" rx="13" fill="#26a69a"/>
+    <rect x="-74" y="-42" width="34" height="26" rx="8" fill="#ffca28" transform="rotate(-12 -57 -29)"/>` },
+
+  { id: 'bathtub', flies: false, say: 'Ванна не летает', svg: `
+    <path d="M84,-28 L84,-52 Q84,-60 74,-60 L66,-60 L66,-52" stroke="#90a4ae" stroke-width="6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <g transform="translate(-30,-46)">
+      <ellipse cx="4" cy="4" rx="16" ry="10" fill="#ffd600"/>
+      <circle cx="-8" cy="-8" r="8" fill="#ffd600"/>
+      <path d="M-15,-8 L-24,-6 L-15,-3 Z" fill="#ff7043"/>
+      <circle cx="-10" cy="-10" r="1.6" fill="#222"/>
+      <path d="M0,2 Q8,-4 14,4" stroke="#f9a825" stroke-width="2" fill="none"/>
+    </g>
+    <g fill="#fff" stroke="#b3e5fc" stroke-width="2">
+      <circle cx="-70" cy="-30" r="12"/><circle cx="-48" cy="-36" r="14"/><circle cx="-20" cy="-32" r="12"/>
+      <circle cx="10" cy="-36" r="15"/><circle cx="38" cy="-31" r="12"/><circle cx="62" cy="-34" r="13"/>
+    </g>
+    <g fill="#fff" stroke="#b3e5fc" stroke-width="1.5">
+      <circle data-puff="20,-44,0"/><circle data-puff="-40,-46,1"/><circle data-puff="50,-42,2"/>
+    </g>
+    <rect x="-106" y="-28" width="212" height="10" rx="5" fill="#eceff1" stroke="#b0bec5" stroke-width="2"/>
+    <g fill="#ffb300">
+      <path d="M-62,36 Q-66,50 -78,54 L-62,54 Q-56,48 -54,38 Z"/>
+      <path d="M62,36 Q66,50 78,54 L62,54 Q56,48 54,38 Z"/>
+    </g>
+    <path d="M-100,-18 L100,-18 Q100,40 50,42 L-50,42 Q-100,40 -100,-18 Z" fill="#fff" stroke="#b0bec5" stroke-width="3"/>
+    <path d="M-80,-6 Q-78,24 -50,30" stroke="#e3f2fd" stroke-width="6" fill="none" stroke-linecap="round"/>` },
+
+  { id: 'cottoncandy', flies: false, say: 'Сладкая вата не летает', svg: `
+    <path d="M14,16 L92,52" stroke="#d7b98e" stroke-width="7" stroke-linecap="round"/>
+    <g fill="#f8a5c2">
+      <circle cx="-30" cy="-6" r="32"/><circle cx="0" cy="-28" r="32"/><circle cx="26" cy="-6" r="28"/>
+      <circle cx="-4" cy="14" r="26"/><circle cx="-58" cy="12" r="22"/><circle cx="-50" cy="-30" r="22"/>
+    </g>
+    <g fill="#fcd0e0">
+      <circle cx="-10" cy="-36" r="12"/><circle cx="-48" cy="-14" r="10"/><circle cx="18" cy="-14" r="9"/>
+    </g>` },
+
+  { id: 'wagon', flies: false, say: 'Вагон не летает', svg: `
+    <rect x="-108" y="4" width="10" height="8" fill="#37474f"/><rect x="98" y="4" width="10" height="8" fill="#37474f"/>
+    <rect x="-90" y="16" width="180" height="10" fill="#37474f"/>
+    <rect x="-100" y="-46" width="200" height="64" rx="8" fill="#c62828"/>
+    <rect x="-104" y="-54" width="208" height="12" rx="6" fill="#455a64"/>
+    <g fill="#bbdefb" stroke="#8e1c1c" stroke-width="2">
+      ${[-86, -52, -18, 16, 50].map(x => `<rect x="${x}" y="-34" width="26" height="22" rx="3"/>`).join('')}
+    </g>
+    <rect x="-100" y="0" width="200" height="5" fill="#ffeb3b"/>
+    ${[-68, -42, 42, 68].map(x => `<g data-spin="${x},32,-8">
+      <circle cx="${x}" cy="32" r="11" fill="#424242"/>
+      <path d="M${x - 9},32 L${x + 9},32 M${x},23 L${x},41" stroke="#9e9e9e" stroke-width="2.5"/>
+    </g><circle cx="${x}" cy="32" r="3.5" fill="#bdbdbd"/>`).join('')}` },
+
+  { id: 'candy', flies: false, say: 'Конфета не летает', svg: `
+    <g data-sway="-44,0,10,5">
+      <path d="M-44,-8 L-98,-34 Q-86,0 -98,34 L-44,8 Z" fill="#c62828"/>
+      <path d="M-60,-10 L-90,-24 M-60,10 L-90,24 M-62,0 L-92,0" stroke="#ef9a9a" stroke-width="2"/>
+    </g>
+    <g data-sway="44,0,-10,5">
+      <path d="M44,-8 L98,-34 Q86,0 98,34 L44,8 Z" fill="#c62828"/>
+      <path d="M60,-10 L90,-24 M60,10 L90,24 M62,0 L92,0" stroke="#ef9a9a" stroke-width="2"/>
+    </g>
+    <ellipse cx="0" cy="0" rx="52" ry="32" fill="#e53935"/>
+    <g stroke="#fff" stroke-width="7" fill="none" stroke-linecap="round">
+      <path d="M-28,-26 Q-12,0 -28,26"/><path d="M4,-31 Q20,0 4,31"/><path d="M34,-22 Q46,0 34,22"/>
+    </g>
+    <ellipse cx="-14" cy="-16" rx="18" ry="6" fill="#fff" opacity=".35"/>` },
+
+  { id: 'lipstick', flies: false, say: 'Помада не летает', svg: `
+    <rect x="-6" y="-20" width="104" height="40" rx="5" fill="#212121"/>
+    <rect x="82" y="-20" width="8" height="40" fill="#ffc107"/>
+    <rect x="6" y="-14" width="70" height="5" rx="2" fill="#555"/>
+    <path d="M-26,-15 L-68,-15 L-98,15 L-26,15 Z" fill="#d81b60"/>
+    <path d="M-30,-9 L-64,-9" stroke="#f48fb1" stroke-width="4" stroke-linecap="round"/>
+    <rect x="-26" y="-22" width="22" height="44" rx="3" fill="#ffc107"/>
+    <rect x="-22" y="-22" width="3" height="44" fill="#ffe082"/>` },
+
+  { id: 'hippo', flies: false, say: 'Бегемот не летает', svg: `
+    <path d="M90,-4 Q100,0 98,10" stroke="#7e7898" stroke-width="5" fill="none" stroke-linecap="round" data-sway="90,-4,15,3"/>
+    <rect x="52" y="18" width="22" height="30" rx="8" fill="#7e7898" data-sway="63,18,12,6,0"/>
+    <rect x="-16" y="18" width="22" height="30" rx="8" fill="#7e7898" data-sway="-5,18,12,6,3"/>
+    <ellipse cx="25" cy="2" rx="68" ry="40" fill="#9590b4"/>
+    <ellipse cx="25" cy="22" rx="54" ry="14" fill="#a9a4c4"/>
+    <rect x="34" y="20" width="24" height="30" rx="8" fill="#9590b4" data-sway="46,20,14,6,1.5"/>
+    <rect x="-2" y="20" width="24" height="30" rx="8" fill="#9590b4" data-sway="10,20,14,6,4.5"/>
+    <g data-sway="-30,-30,14,6">
+      <circle cx="-30" cy="-36" r="7" fill="#9590b4"/><circle cx="-30" cy="-36" r="3.5" fill="#e8a5b8"/>
+    </g>
+    <ellipse cx="-44" cy="-8" rx="36" ry="30" fill="#9590b4"/>
+    <ellipse cx="-74" cy="6" rx="32" ry="26" fill="#a9a4c4"/>
+    <ellipse cx="-96" cy="-6" rx="3" ry="4.5" fill="#5e5878"/><ellipse cx="-84" cy="-10" rx="3" ry="4.5" fill="#5e5878"/>
+    <path d="M-104,14 Q-80,26 -52,16" stroke="#5e5878" stroke-width="3" fill="none" stroke-linecap="round"/>
+    <rect x="-92" y="18" width="6" height="7" rx="1.5" fill="#fff"/><rect x="-71" y="19" width="6" height="7" rx="1.5" fill="#fff"/>
+    <ellipse cx="-56" cy="10" rx="8" ry="5" fill="#f48fb1" opacity=".6"/>
+    <circle cx="-50" cy="-32" r="9" fill="#9590b4"/>
+    <circle cx="-51" cy="-33" r="5" fill="#fff"/><circle cx="-52.5" cy="-33" r="2.6" fill="#222"/>` },
+
+  { id: 'pigeon', flies: true, say: 'Голубь летает', svg: `
+    <path d="M50,-2 L96,-10 L100,4 L96,18 L50,14 Z" fill="#90a4ae"/>
+    <path d="M84,-8 L96,-10 L100,4 L96,18 L84,16 Z" fill="#37474f"/>
+    <path data-flap="-6,9,0.5" d="M-6,-6 C4,-56 50,-70 74,-56 C54,-42 34,-20 24,-4 Z" fill="#78909c"/>
+    <ellipse cx="12" cy="4" rx="48" ry="23" fill="#b0bec5"/>
+    <path d="M10,25 l-6,10 M18,25 l-4,10" stroke="#e57373" stroke-width="3" stroke-linecap="round"/>
+    <ellipse cx="-26" cy="4" rx="16" ry="14" fill="#6aa58e"/>
+    <ellipse cx="-22" cy="12" rx="12" ry="8" fill="#8e6bb0" opacity=".8"/>
+    <circle cx="-40" cy="-10" r="17" fill="#90a4ae"/>
+    <path d="M-54,-12 L-72,-8 L-54,-4 Z" fill="#455a64"/>
+    <ellipse cx="-54" cy="-12" rx="4" ry="2.5" fill="#eceff1"/>
+    <circle cx="-44" cy="-14" r="4.5" fill="#ff7043"/><circle cx="-44.5" cy="-14" r="2" fill="#111"/>
+    <g data-flap="-4,9">
+      <path d="M-10,-4 C0,-60 50,-74 78,-58 C56,-44 34,-20 24,-2 Z" fill="#b0bec5" stroke="#78909c" stroke-width="2"/>
+      <path d="M18,-22 L46,-44 M28,-12 L58,-36" stroke="#455a64" stroke-width="4" stroke-linecap="round"/>
+    </g>` },
+
+  { id: 'paperplane', flies: true, say: 'Бумажный самолётик летает', svg: `
+    <g stroke="#90a4ae" stroke-width="1.5" stroke-linejoin="round">
+      <path d="M-100,0 L40,0 L30,16 Z" fill="#cfd8dc"/>
+      <path d="M-100,0 L40,0 L86,24 Z" fill="#e3eaef"/>
+      <path d="M-100,0 L96,-42 L40,0 Z" fill="#fff"/>
+    </g>` },
+
+  { id: 'balloon', flies: true, say: 'Воздушный шар летает', svg: `
+    <g transform="scale(.9)">
+      <path d="M-14,40 L-12,58 M14,40 L12,58" stroke="#6d4c41" stroke-width="2"/>
+      <path d="M0,-74 C44,-74 64,-42 60,-12 C56,14 24,30 14,40 L-14,40 C-24,30 -56,14 -60,-12 C-64,-42 -44,-74 0,-74 Z" fill="#e53935"/>
+      <path d="M0,-74 C24,-74 36,-42 34,-12 C32,14 16,30 8,40 L-8,40 C-16,30 -32,14 -34,-12 C-36,-42 -24,-74 0,-74 Z" fill="#fdd835"/>
+      <path d="M0,-74 C8,-74 12,-42 11,-12 C10,14 5,30 3,40 L-3,40 C-5,30 -10,14 -11,-12 C-12,-42 -8,-74 0,-74 Z" fill="#1e88e5"/>
+      <path d="M-57,-20 Q0,-6 57,-20" stroke="#fff" stroke-width="4" fill="none" opacity=".7"/>
+      <ellipse cx="-30" cy="-46" rx="8" ry="16" fill="#fff" opacity=".3" transform="rotate(20 -30 -46)"/>
+      <rect x="-14" y="56" width="28" height="20" rx="3" fill="#8d6e63"/>
+      <path d="M-14,63 L14,63 M-14,70 L14,70 M-5,56 L-5,76 M5,56 L5,76" stroke="#6d4c41" stroke-width="1.5"/>
+      <rect x="-16" y="54" width="32" height="4" rx="2" fill="#6d4c41"/>
+    </g>` },
+
+  { id: 'leaf', flies: true, say: 'Осенний лист летает', svg: `
+    <g transform="scale(1.15)"><g data-sway="0,0,28,2.4">
+      <path d="M0,26 L0,64" stroke="#8d6e63" stroke-width="4" stroke-linecap="round"/>
+      <path d="M0,-60 L10,-40 L22,-46 L18,-20 L40,-34 L36,-22 L58,-26 L50,-8 L60,-2 L32,18 L36,30 L6,26 L4,40 L-4,40 L-6,26 L-36,30 L-32,18 L-60,-2 L-50,-8 L-58,-26 L-36,-22 L-40,-34 L-18,-20 L-22,-46 L-10,-40 Z" fill="#ff8f00" stroke="#e65100" stroke-width="2.5" stroke-linejoin="round"/>
+      <path d="M0,34 L0,-48 M0,10 L44,-22 M0,10 L-44,-22 M0,22 L28,22 M0,22 L-28,22" stroke="#e65100" stroke-width="2" stroke-linecap="round"/>
+    </g></g>` },
+
+  { id: 'rocket', flies: true, say: 'Ракета летает', svg: `
+    <g fill="#cfd8dc"><circle data-puff="112,2,0"/><circle data-puff="112,2,1"/><circle data-puff="112,2,2"/></g>
+    <g data-flicker="86,18">
+      <path d="M86,-14 Q140,0 86,14 Z" fill="#ff9800"/><path d="M86,-8 Q118,0 86,8 Z" fill="#ffeb3b"/></g>
+    <path d="M40,-26 L76,-58 L88,-56 L84,-24 Z" fill="#e53935"/>
+    <path d="M40,26 L76,58 L88,56 L84,24 Z" fill="#e53935"/>
+    <path d="M-98,0 C-80,-22 -50,-28 -30,-28 L76,-28 Q88,-28 88,-16 L88,16 Q88,28 76,28 L-30,28 C-50,28 -80,22 -98,0 Z" fill="#eceff1" stroke="#90a4ae" stroke-width="2"/>
+    <path d="M-98,0 C-84,-17 -66,-25 -52,-27 L-52,27 C-66,25 -84,17 -98,0 Z" fill="#e53935"/>
+    <rect x="30" y="-28" width="12" height="56" fill="#e53935"/>
+    <circle cx="-10" cy="0" r="14" fill="#4fc3f7" stroke="#607d8b" stroke-width="4"/>
+    <circle cx="-14" cy="-4" r="4" fill="#fff" opacity=".7"/>` },
+
+  { id: 'owl', flies: true, say: 'Сова летает', svg: `
+    <g data-flap="-8,6,0.5"><path d="M-12,-10 C-22,-60 30,-82 70,-62 C46,-48 30,-26 20,-8 Z" fill="#5d4037"/></g>
+    <g data-flap="-6,6">
+      <path d="M-4,-6 C6,-58 50,-78 86,-58 C62,-44 44,-22 32,-2 Z" fill="#795548" stroke="#5d4037" stroke-width="2"/>
+      <path d="M24,-30 L52,-52 M30,-18 L62,-44 M38,-8 L70,-36" stroke="#5d4037" stroke-width="2" stroke-linecap="round"/>
+    </g>
+    <path d="M30,10 L62,18 L58,30 L28,22 Z" fill="#6d4c41"/>
+    <ellipse cx="0" cy="6" rx="42" ry="48" fill="#8d6e63"/>
+    <ellipse cx="0" cy="20" rx="28" ry="32" fill="#d7ccc8"/>
+    <path d="M-12,8 l4,4 l4,-4 M2,8 l4,4 l4,-4 M-14,22 l4,4 l4,-4 M0,22 l4,4 l4,-4 M-8,36 l4,4 l4,-4 M6,36 l4,4 l4,-4" stroke="#a1887f" stroke-width="2" fill="none"/>
+    <path d="M-36,-34 L-30,-62 L-16,-40 Z M36,-34 L30,-62 L16,-40 Z" fill="#6d4c41"/>
+    <circle cx="-17" cy="-20" r="19" fill="#efebe9"/><circle cx="17" cy="-20" r="19" fill="#efebe9"/>
+    <circle cx="-17" cy="-20" r="12" fill="#ffb300"/><circle cx="17" cy="-20" r="12" fill="#ffb300"/>
+    <circle cx="-19" cy="-20" r="6.5" fill="#212121"/><circle cx="15" cy="-20" r="6.5" fill="#212121"/>
+    <circle cx="-21" cy="-23" r="2.2" fill="#fff"/><circle cx="13" cy="-23" r="2.2" fill="#fff"/>
+    <path d="M-5,-10 L5,-10 L0,2 Z" fill="#ff8f00"/>
+    <path d="M-12,52 l-2,8 M-6,52 l0,8 M6,52 l0,8 M12,52 l2,8" stroke="#ff8f00" stroke-width="3" stroke-linecap="round"/>
+` },
+
+  { id: 'pumpkin', flies: false, say: 'Тыква не летает', svg: `
+    <g data-sway="0,40,6,2.2">
+      <path d="M4,-46 Q8,-66 22,-70" stroke="#6d4c41" stroke-width="9" fill="none" stroke-linecap="round"/>
+      <path d="M14,-58 C30,-74 54,-70 60,-56 C44,-54 30,-50 14,-58 Z" fill="#43a047"/>
+      <path d="M-4,-50 q-14,-8 -10,-20 q4,-8 12,-4" stroke="#558b2f" stroke-width="3" fill="none"/>
+      <ellipse cx="-46" cy="4" rx="44" ry="50" fill="#ef6c00"/><ellipse cx="46" cy="4" rx="44" ry="50" fill="#ef6c00"/>
+      <ellipse cx="-20" cy="4" rx="40" ry="54" fill="#fb8c00"/><ellipse cx="20" cy="4" rx="40" ry="54" fill="#fb8c00"/>
+      <ellipse cx="0" cy="4" rx="30" ry="56" fill="#ff9800"/>
+      <path d="M-20,-46 Q-28,4 -20,56 M20,-46 Q28,4 20,56 M-52,-40 Q-66,4 -52,50 M52,-40 Q66,4 52,50" stroke="#e65100" stroke-width="3" fill="none" opacity=".6"/>
+      <ellipse cx="-12" cy="-24" rx="8" ry="16" fill="#fff" opacity=".25"/>
+    </g>` },
+
+  { id: 'wolf', flies: false, say: 'Волк не летает', svg: `
+    <path d="M58,-8 C88,-16 112,2 118,26 C102,20 84,14 60,10 Z" fill="#78909c" data-sway="58,0,10,3"/>
+    <rect x="46" y="8" width="15" height="46" rx="6" fill="#607d8b" data-sway="53,8,14,6,0"/>
+    <rect x="-30" y="8" width="15" height="46" rx="6" fill="#607d8b" data-sway="-22,8,14,6,3"/>
+    <ellipse cx="14" cy="2" rx="58" ry="28" fill="#90a4ae"/>
+    <ellipse cx="8" cy="18" rx="44" ry="11" fill="#cfd8dc"/>
+    <path d="M-6,-24 L4,-34 L12,-24 L22,-32 L30,-22 Z" fill="#78909c"/>
+    <rect x="28" y="10" width="15" height="46" rx="6" fill="#90a4ae" data-sway="35,10,16,6,1.5"/>
+    <rect x="-44" y="10" width="15" height="46" rx="6" fill="#90a4ae" data-sway="-36,10,16,6,4.5"/>
+    <path d="M-30,-10 C-34,10 -50,16 -60,10 L-56,-16 Z" fill="#cfd8dc"/>
+    <circle cx="-54" cy="-20" r="25" fill="#90a4ae"/>
+    <path d="M-50,-40 L-44,-70 L-30,-40 Z" fill="#78909c"/><path d="M-47,-44 L-43,-62 L-35,-44 Z" fill="#f48fb1"/>
+    <path d="M-66,-38 L-66,-66 L-52,-42 Z" fill="#78909c"/>
+    <path d="M-68,-26 L-106,-14 Q-112,-6 -104,-2 L-66,-2 Z" fill="#90a4ae"/>
+    <path d="M-70,-4 L-104,-2 Q-96,6 -72,6 Z" fill="#cfd8dc"/>
+    <circle cx="-107" cy="-10" r="5" fill="#212121"/>
+    <path d="M-100,-2 Q-90,2 -80,-2" stroke="#37474f" stroke-width="2" fill="none"/>
+    <circle cx="-62" cy="-26" r="5" fill="#ffca28"/><circle cx="-63" cy="-26" r="2.4" fill="#212121"/>` },
+];
+
+/* ---------- анимации частей объекта (крылья, винты, хвосты) ---------- */
+function setupAnims(root) {
+  const fns = [];
+  const nums = (el, a) => el.getAttribute(a).split(',').map(Number);
+  root.querySelectorAll('[data-flap]').forEach(el => {
+    const [py, sp, ph = 0] = nums(el, 'data-flap');
+    fns.push(t => el.setAttribute('transform',
+      `translate(0 ${py}) scale(1 ${(0.2 + 0.8 * Math.cos(t * sp + ph)).toFixed(3)}) translate(0 ${-py})`));
+  });
+  root.querySelectorAll('[data-sway]').forEach(el => {
+    const [px, py, amp, sp, ph = 0] = nums(el, 'data-sway');
+    fns.push(t => el.setAttribute('transform', `rotate(${(amp * Math.sin(t * sp + ph)).toFixed(2)} ${px} ${py})`));
+  });
+  root.querySelectorAll('[data-spin]').forEach(el => {
+    const [cx, cy, sp] = nums(el, 'data-spin');
+    fns.push(t => el.setAttribute('transform', `rotate(${(t * sp * 57.3 % 360).toFixed(1)} ${cx} ${cy})`));
+  });
+  root.querySelectorAll('[data-rotor]').forEach(el => {
+    const [cx, sp] = nums(el, 'data-rotor');
+    fns.push(t => {
+      const s = Math.max(0.12, Math.abs(Math.cos(t * sp)));
+      el.setAttribute('transform', `translate(${cx} 0) scale(${s.toFixed(3)} 1) translate(${-cx} 0)`);
+    });
+  });
+  root.querySelectorAll('[data-flicker]').forEach(el => {
+    const [px, sp] = nums(el, 'data-flicker');
+    fns.push(t => {
+      const s = 0.85 + 0.2 * Math.sin(t * sp) + 0.08 * Math.sin(t * sp * 2.7);
+      el.setAttribute('transform', `translate(${px} 0) scale(${s.toFixed(3)} 1) translate(${-px} 0)`);
+    });
+  });
+  root.querySelectorAll('[data-puff]').forEach(el => {
+    const [x, y, i] = nums(el, 'data-puff');
+    fns.push(t => {
+      const p = (t * 0.5 + i / 3) % 1;
+      el.setAttribute('cx', x + p * 46);
+      el.setAttribute('cy', y - p * 34);
+      el.setAttribute('r', 5 + p * 12);
+      el.setAttribute('opacity', (0.85 * (1 - p)).toFixed(2));
+    });
+  });
+  return fns;
+}
+
+/* ---------- сцена ---------- */
+const svg = $('#scene'), actor = $('#actor'), cloudsG = $('#clouds'), sunG = $('#sun'), raysG = $('#rays');
+const controls = $('#controls');
+const msg = $('#msg'), hud = $('#hud');
+
+let W = 0, H = 0, k0 = 1, band = { top: 0, bottom: 0 };
+const safe = { t: 0, r: 0, b: 0, l: 0 };
+
+const probe = document.createElement('div');
+probe.style.cssText = 'position:fixed;left:0;top:0;visibility:hidden;pointer-events:none;' +
+  'padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)';
+document.body.appendChild(probe);
+
+for (let i = 0; i < 10; i++) {
+  const a = i * Math.PI / 5;
+  const l = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+  l.setAttribute('x1', Math.cos(a) * 32); l.setAttribute('y1', Math.sin(a) * 32);
+  l.setAttribute('x2', Math.cos(a) * 42); l.setAttribute('y2', Math.sin(a) * 42);
+  raysG.appendChild(l);
+}
+
+const CLOUD = `<ellipse cx="0" cy="14" rx="74" ry="20" fill="#e1effb"/>
+  <g fill="#fff"><ellipse cx="0" cy="8" rx="70" ry="20"/><circle cx="-32" cy="0" r="24"/>
+  <circle cx="4" cy="-14" r="32"/><circle cx="38" cy="-2" r="24"/></g>`;
+const clouds = Array.from({ length: 6 }, (_, i) => {
+  const s = rnd(0.45, 1.1);
+  const el = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  el.innerHTML = CLOUD;
+  el.setAttribute('opacity', rnd(0.8, 1).toFixed(2));
+  cloudsG.appendChild(el);
+  return { fx: i / 6 + rnd(0, 0.12), fy: rnd(0.08, 0.62), s, v: 14 * s, el };
+});
+
+function layout() {
+  W = window.innerWidth; H = window.innerHeight;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  const cs = getComputedStyle(probe);
+  safe.t = parseFloat(cs.paddingTop) || 0; safe.r = parseFloat(cs.paddingRight) || 0;
+  safe.b = parseFloat(cs.paddingBottom) || 0; safe.l = parseFloat(cs.paddingLeft) || 0;
+  k0 = Math.max(0.6, Math.min(1.6, H / 430));
+  sunG.setAttribute('transform', `translate(${W - safe.r - 58 * k0} ${54 * k0}) scale(${k0})`);
+  band.top = safe.t + 52;
+  const ct = controls.classList.contains('hidden') ? H - 90 : controls.getBoundingClientRect().top;
+  band.bottom = ct - 8;
+}
+window.addEventListener('resize', layout);
+window.addEventListener('orientationchange', () => setTimeout(layout, 200));
+
+/* ---------- звук (Web Audio): голос и эффекты ---------- */
+// Режим «playback» (звук при беззвучном режиме) здесь не включаем: он может мешать микрофону
+let ac = null;
+try {
+  const C = window.AudioContext || window.webkitAudioContext;
+  if (C) ac = new C();
+} catch (e) {}
+
+function unlockAudio() {
+  try {
+    if (ac && ac.state !== 'running') ac.resume();
+  } catch (e) {}
+}
+function tone(freq, at, dur, type, vol, slideTo) {
+  if (!ac) return;
+  const t0 = ac.currentTime + at;
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = type; o.frequency.setValueAtTime(freq, t0);
+  if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t0 + dur);
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(vol, t0 + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  o.connect(g).connect(ac.destination);
+  o.start(t0); o.stop(t0 + dur + 0.05);
+}
+const sfxGood = () => [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => tone(f, i * 0.09, 0.22, 'triangle', 0.22));
+const sfxBad = () => { tone(330, 0, 0.28, 'sine', 0.25, 230); tone(230, 0.24, 0.4, 'sine', 0.25, 160); };
+
+// фразы озвучки; tools/embed-voice.py берёт их отсюда
+const SAY = {
+  ask: 'Летает или не летает?',
+  good: 'Молодец!',
+  retry: 'Попробуй ещё раз.',
+};
+
+/* --- озвучка: готовые MP3 внутри файла (голос Svetlana) --- */
+const voices = {};
+let voiceSrc = null, wantedPhrase = null, wantedEnd = null;
+
+// в начале MP3 есть тишина; пропускаем её, чтобы голос звучал сразу
+function firstSound(buf) {
+  const ch = buf.getChannelData(0);
+  for (let i = 0; i < ch.length; i++) {
+    if (Math.abs(ch[i]) > 0.01) return Math.max(0, i / buf.sampleRate - 0.01);
+  }
+  return 0;
+}
+
+function stopVoice() {
+  wantedPhrase = null; wantedEnd = null;
+  if (!voiceSrc) return;
+  const src = voiceSrc;
+  voiceSrc = null;
+  try { src.stop(); } catch (e) {}
+}
+
+// onEnd вызывается, только если фразу договорили до конца
+function speak(text, onEnd) {
+  stopVoice();
+  const v = voices[text];
+  if (!v) { wantedPhrase = text; wantedEnd = onEnd || null; return; }   // ещё декодируется: сыграем, как только будет готово
+  const src = ac.createBufferSource();
+  src.buffer = v.buf;
+  src.connect(ac.destination);
+  if (onEnd) src.onended = () => { if (voiceSrc === src) { voiceSrc = null; onEnd(); } };
+  voiceSrc = src;
+  src.start(0, v.offset);
+}
+
+if (ac) {
+  const data = JSON.parse($('#voiceData').textContent);
+  Object.keys(data).forEach(text => {
+    const bin = atob(data[text]);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    ac.decodeAudioData(bytes.buffer, buf => {
+      voices[text] = { buf, offset: firstSound(buf) };
+      if (wantedPhrase === text) speak(text, wantedEnd);
+    }, () => {});
+  });
+}
+
+/* ---------- ответ голосом: распознавание речи Safari ---------- */
+const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+const mic = $('#mic'), heard = $('#heard');
+// Дети говорят нечётко, поэтому глагол ищем по похожести: сводим путаемые звуки к одному
+// и считаем, сколько букв надо поменять. «Не», «нет» и т. п. ищем отдельно.
+const YES_FORMS = ['летает', 'летают', 'летит', 'летать', 'бывает', 'бывают', 'умеет', 'может'];
+const YES_SHORT = ['да', 'ага', 'угу'];
+const NO_SHORT = ['не', 'нет', 'ни', 'неа', 'нее', 'ня', 'нету'];
+const SIMILAR = 0.67;  // насколько похоже (1 — точно); при 0.6 за «летает» сходили «бегает», «лает», «пакет»
+const SOUND = {
+  'р': 'л', 'ж': 'ш', 'щ': 'ш', 'ц': 'ч', 'г': 'к', 'х': 'к', 'б': 'п', 'д': 'т', 'в': 'ф',
+  'ы': 'и', 'э': 'е', 'ё': 'е', 'о': 'а', 'я': 'а', 'ю': 'у', 'й': '', 'ь': '', 'ъ': '',
+};
+// повторы схлопываем: дети тянут гласные («лииитает»)
+const simplify = w => [...w].map(ch => ch in SOUND ? SOUND[ch] : ch).join('').replace(/(.)\1+/g, '$1');
+const YES_SIMPLE = YES_FORMS.map(simplify);
+
+function similarity(a, b) {
+  const row = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    let prev = row[0];
+    row[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const tmp = row[j];
+      row[j] = Math.min(row[j] + 1, row[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1));
+      prev = tmp;
+    }
+  }
+  return 1 - row[b.length] / Math.max(a.length, b.length);
+}
+
+const isVerb = w => w.length >= 3 && YES_SIMPLE.some(f => similarity(simplify(w), f) >= SIMILAR);
+
+// true — «летает», false — «не летает», null — не разобрали (тогда не ругаем, а слушаем дальше)
+function decide(text) {
+  const words = text.toLowerCase().replace(/ё/g, 'е').split(/[^а-я]+/).filter(Boolean);
+  if (words.some(w => /^з?на(ю|ет)$/.test(w))) return null;   // «не знаю» — не ответ
+  let neg = false, yes = false;
+  for (const w of words) {
+    const c = w.replace(/(.)\1+/g, '$1');   // «нееет» → «нет»
+    if (NO_SHORT.includes(c)) neg = true;
+    else if (/^(не|ни|ня)/.test(w) && w.length > 4 && isVerb(w.slice(2))) neg = true;   // «нелетает»
+    else if (YES_SHORT.includes(c) || isVerb(w)) yes = true;
+  }
+  return neg ? false : yes ? true : null;
+}
+
+let rec = null, listenWanted = false, needTap = false, heardUntil = 0;
+
+function showHeard(text) {
+  heard.textContent = text;
+  heard.classList.remove('hidden');
+  heardUntil = T + 3;
+}
+
+function startListening() {
+  if (!Recognition || mode !== 'flying') return;
+  listenWanted = true;
+  if (rec) return;
+  const r = new Recognition();
+  r.lang = 'ru-RU';
+  r.interimResults = true;
+  r.maxAlternatives = 5;
+  r.continuous = false;
+  r.onresult = e => {
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const res = e.results[i];
+      showHeard('🎤 ' + res[0].transcript);
+      if (!res.isFinal) continue;   // «не» может прийти позже — ждём конца фразы
+      for (let j = 0; j < res.length; j++) {
+        const d = decide(res[j].transcript);
+        if (d !== null) { stopListening(); voiceAnswer(d); return; }
+      }
+    }
+  };
+  r.onerror = e => {
+    if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+      listenWanted = false;
+      needTap = true;
+      mic.classList.add('need');
+    }
+  };
+  r.onend = () => {
+    if (rec !== r) return;
+    rec = null;
+    mic.classList.remove('listening');
+    // Safari сам останавливается после паузы — слушаем снова, пока нет ответа
+    if (listenWanted) setTimeout(() => { if (listenWanted && !rec) startListening(); }, 300);
+  };
+  try {
+    r.start();
+    rec = r;
+    mic.classList.add('listening');
+  } catch (e) {
+    needTap = true;
+    mic.classList.add('need');
+  }
+}
+
+function stopListening() {
+  listenWanted = false;
+  if (!rec) return;
+  const r = rec;
+  rec = null;
+  mic.classList.remove('listening');
+  try { r.abort(); } catch (e) {}
+}
+
+// после вопроса слушаем сами; если Safari не разрешает без касания — ждём нажатия на микрофон
+const listenAfterVoice = () => { if (!needTap) startListening(); };
+
+function micTap() {
+  unlockAudio();
+  needTap = false;
+  mic.classList.remove('need');
+  if (mode === 'flying') { stopVoice(); startListening(); }
+}
+if (!Recognition) mic.classList.add('hidden');
+mic.addEventListener('click', e => { e.stopPropagation(); micTap(); });
+mic.addEventListener('touchend', e => { e.preventDefault(); micTap(); }, { passive: false });
+
+/* ---------- игра ---------- */
+const score = { ok: 0, bad: 0 };
+let mode = 'start';          // start | flying | result
+let T = 0;                   // игровое время (стоит на паузе в портрете)
+let obj = null, objEl = null, anims = [];
+let flightT = 0, baseFrac = 0.5, k = 1, margin = 0;
+let pos = { x: 0, y: 0, rot: 0 }, fall = null, nextAt = 0, missed = false, msgHideAt = 0;
+
+function shuffle(a) {
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
+let bag = [], lastId = null;
+function nextObj() {
+  if (!bag.length) {
+    bag = shuffle(OBJECTS.slice());
+    if (bag[bag.length - 1].id === lastId) bag.unshift(bag.pop());
+  }
+  const o = bag.pop(); lastId = o.id; return o;
+}
+
+function spawn() {
+  obj = nextObj();
+  actor.innerHTML = `<g>${obj.svg}</g>`;
+  objEl = actor.firstElementChild;
+  anims = setupAnims(objEl);
+  flightT = 0; fall = null;
+  baseFrac = rnd(0.15, 0.85);
+  mode = 'flying';
+  missed = false; msgHideAt = 0;
+  controls.classList.remove('off');
+  msg.classList.add('hidden');
+  speak(SAY.ask, listenAfterVoice);
+}
+
+function showMsg(good, sub, toast) {
+  msg.className = (good ? 'good' : 'bad') + (toast ? ' toast' : '');
+  msg.querySelector('.big').textContent = good ? 'Молодец!' : 'Попробуй ещё раз';
+  msg.querySelector('.sub').textContent = sub;
+  const card = msg.querySelector('.card');
+  card.style.animation = 'none'; void card.offsetWidth; card.style.animation = '';
+}
+
+// неверный ответ не заканчивает раунд: предмет летит дальше, можно ответить ещё раз
+function voiceAnswer(v) {
+  if (mode !== 'flying') return;
+  if (v === obj.flies) { resolve(v); return; }
+  if (!missed) {
+    missed = true;
+    score.bad++;
+    $('#bad').textContent = score.bad;
+  }
+  sfxBad();
+  showMsg(false, '', true);
+  msgHideAt = T + 1.6;
+  speak(SAY.retry, listenAfterVoice);
+}
+
+function objScale() {
+  return Math.max(0.55, Math.min(1.5, Math.min(H / 420, W / 900))) * 0.95;
+}
+
+function flightPos(t) {
+  k = objScale();
+  margin = 140 * k;
+  const amp = 16 * k, w = 2 * Math.PI / 2.6;
+  const half = 64 * k;
+  const lo = band.top + half + amp, hi = band.bottom - half - amp;
+  const baseY = hi > lo ? lo + baseFrac * (hi - lo) : (band.top + band.bottom) / 2;
+  const vx = (W + 2 * margin) / DURATION;
+  const dy = amp * w * Math.cos(t * w);
+  return {
+    x: W + margin - t * vx,
+    y: baseY + amp * Math.sin(t * w),
+    rot: -Math.atan2(dy, vx) * 57.3 * 0.7,
+    vx,
+  };
+}
+
+function resolve(answer) {
+  if (mode !== 'flying') return;
+  mode = 'result';
+  stopListening();
+  nextAt = T + 3.6;   // следующий предмет появится сам
+  msgHideAt = 0;
+  const correct = answer !== null && answer === obj.flies;
+  if (correct) score.ok++; else if (!missed) score.bad++;
+  $('#ok').textContent = score.ok; $('#bad').textContent = score.bad;
+
+  // показываем правду: летающие улетают, нелетающие падают вниз
+  if (answer === null) {
+    fall = null;
+    objEl.style.display = 'none';
+  } else {
+    const vx = flightPos(flightT).vx;
+    fall = obj.flies
+      ? { vx: -vx * 4, vy: -60, g: 0, vr: 0 }
+      : { vx: -vx * 0.4, vy: -160, g: 1500, vr: -70 };
+  }
+
+  controls.classList.add('off');
+  showMsg(correct, obj.say);
+  correct ? sfxGood() : sfxBad();
+  speak(correct ? SAY.good : SAY.retry);
+}
+
+function setTransform() {
+  objEl.setAttribute('transform',
+    `translate(${pos.x.toFixed(1)} ${pos.y.toFixed(1)}) rotate(${pos.rot.toFixed(2)}) scale(${k.toFixed(3)})`);
+}
+
+const portrait = window.matchMedia('(orientation: portrait)');
+let last = performance.now();
+function frame(now) {
+  let dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  if (portrait.matches) dt = 0;
+  T += dt;
+
+  for (const c of clouds) {
+    const s = c.s * k0;
+    c.fx -= c.v * k0 * dt / W;
+    if (c.fx * W < -110 * s) { c.fx = (W + 110 * s) / W; c.fy = rnd(0.08, 0.62); }
+    c.el.setAttribute('transform', `translate(${(c.fx * W).toFixed(1)} ${(c.fy * H).toFixed(1)}) scale(${s.toFixed(3)})`);
+  }
+  raysG.setAttribute('transform', `rotate(${(T * 12 % 360).toFixed(1)})`);
+
+  if (mode === 'flying') {
+    flightT += dt;
+    if (flightT >= DURATION) {
+      resolve(null);
+    } else {
+      const p = flightPos(flightT);
+      pos.x = p.x; pos.y = p.y; pos.rot = p.rot;
+      setTransform();
+    }
+  } else if (mode === 'result' && fall) {
+    fall.vy += fall.g * dt;
+    pos.x += fall.vx * dt; pos.y += fall.vy * dt;
+    pos.rot += (fall.vr ? fall.vr * dt : (6 - pos.rot) * Math.min(1, dt * 4));
+    setTransform();
+    if (pos.y > H + 200 || pos.x < -margin) { fall = null; objEl.style.display = 'none'; }
+  }
+
+  if (mode === 'result' && T >= nextAt) spawn();
+  if (msgHideAt && T > msgHideAt) { msgHideAt = 0; if (mode === 'flying') msg.classList.add('hidden'); }
+  if (heardUntil && T > heardUntil) { heard.classList.add('hidden'); heardUntil = 0; }
+
+  for (const f of anims) f(T);
+  requestAnimationFrame(frame);
+}
+
+/* ---------- ввод ---------- */
+document.addEventListener('pointerup', unlockAudio);
+// для проверки на компьютере: Y — «летает», N — «не летает»
+document.addEventListener('keydown', e => {
+  if (e.key === 'y') voiceAnswer(true);
+  if (e.key === 'n') voiceAnswer(false);
+});
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { stopListening(); stopVoice(); }
+});
+
+$('#startBtn').addEventListener('click', () => {
+  unlockAudio();
+  $('#start').classList.add('hidden');
+  hud.classList.remove('hidden');
+  controls.classList.remove('hidden');
+  layout();
+  spawn();
+});
+
+// iOS: без зума, прокрутки и «резинки»
+document.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+document.addEventListener('gesturestart', e => e.preventDefault());
+document.addEventListener('dblclick', e => e.preventDefault());
+
+window.__state = () => ({ mode, id: obj && obj.id, flies: obj && obj.flies, ok: score.ok, bad: score.bad });   // для автотестов
+
+// иконка для «На экран Домой»
+try {
+  const c = document.createElement('canvas'); c.width = c.height = 180;
+  const g = c.getContext('2d');
+  const gr = g.createLinearGradient(0, 0, 0, 180);
+  gr.addColorStop(0, '#4fa8f0'); gr.addColorStop(1, '#c4e8ff');
+  g.fillStyle = gr; g.fillRect(0, 0, 180, 180);
+  g.fillStyle = '#ffd54f'; g.beginPath(); g.arc(142, 38, 20, 0, 7); g.fill();
+  g.fillStyle = '#fff';
+  [[52, 132, 24], [84, 118, 30], [116, 134, 22]].forEach(([x, y, r]) => { g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); });
+  g.fillRect(52, 130, 64, 26);
+  g.fillStyle = '#2f6fd6'; g.font = '900 86px -apple-system, sans-serif'; g.textAlign = 'center';
+  g.fillText('?', 84, 100);
+  const link = document.createElement('link');
+  link.rel = 'apple-touch-icon'; link.href = c.toDataURL('image/png');
+  document.head.appendChild(link);
+} catch (e) {}
+
+layout();
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
